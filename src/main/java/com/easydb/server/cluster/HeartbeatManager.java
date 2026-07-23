@@ -19,6 +19,7 @@ import java.util.concurrent.TimeUnit;
 public class HeartbeatManager {
 
     private final ClusterConfig config;
+    private final RoleElector roleElector;
     private ServerSocket clusterServerSocket;
     private ScheduledExecutorService heartbeatExecutor;
     private ScheduledExecutorService monitorExecutor;
@@ -26,6 +27,7 @@ public class HeartbeatManager {
 
     public HeartbeatManager(ClusterConfig config) {
         this.config = config;
+        this.roleElector = new RoleElector(config);
     }
 
     public void start() throws IOException {
@@ -92,7 +94,7 @@ public class HeartbeatManager {
                 writer.println("OK");
                 break;
             case "PING":
-                writer.println("PONG " + config.getSelfId() + " " + config.getSelfNode().getRole());
+                writer.println("PONG " + config.getSelfId() + " " + config.getSelfNode().getRole() + " " + config.getCurrentTerm());
                 break;
             case "JOIN":
                 handleJoin(parts, writer);
@@ -106,13 +108,33 @@ public class HeartbeatManager {
             case "REPLICATE":
                 handleReplicate(message, writer);
                 break;
+            case "SNAPSHOT":
+                handleSnapshotRequest(writer);
+                break;
             default:
                 writer.println("UNKNOWN");
         }
     }
 
     private void handleHeartbeat(String[] parts) {
-        if (parts.length >= 3) {
+        if (parts.length >= 4) {
+            String nodeId = parts[1];
+            String role = parts[2];
+            long term = Long.parseLong(parts[3]);
+            
+            Node node = config.getNode(nodeId);
+            if (node != null) {
+                node.updateHeartbeat();
+                node.setRole(NodeRole.valueOf(role));
+                
+                // 更新任期
+                if (term > config.getCurrentTerm()) {
+                    config.setCurrentTerm(term);
+                    config.resetVote();
+                }
+            }
+        } else if (parts.length >= 3) {
+            // 兼容旧格式
             String nodeId = parts[1];
             String role = parts[2];
             
@@ -136,7 +158,7 @@ public class HeartbeatManager {
             
             Node master = config.getMaster();
             if (master != null) {
-                writer.println("MASTER " + master.getId() + " " + master.getHost() + " " + master.getClientPort());
+                writer.println("MASTER " + master.getId() + " " + master.getHost() + " " + master.getClientPort() + " " + config.getCurrentTerm());
             } else {
                 writer.println("NO_MASTER");
             }
@@ -144,7 +166,17 @@ public class HeartbeatManager {
     }
 
     private void handleElect(String[] parts, PrintWriter writer) {
-        if (parts.length >= 2) {
+        if (parts.length >= 3) {
+            String candidateId = parts[1];
+            long term = Long.parseLong(parts[2]);
+            
+            if (roleElector.handleVoteRequest(candidateId, term)) {
+                writer.println("VOTE " + config.getSelfId());
+            } else {
+                writer.println("DECLINE");
+            }
+        } else if (parts.length >= 2) {
+            // 兼容旧格式
             String candidateId = parts[1];
             Node candidate = config.getNode(candidateId);
             if (candidate != null) {
@@ -159,7 +191,14 @@ public class HeartbeatManager {
     }
 
     private void handleAck(String[] parts) {
-        if (parts.length >= 3) {
+        if (parts.length >= 4) {
+            String newMasterId = parts[1];
+            String role = parts[2];
+            long term = Long.parseLong(parts[3]);
+            
+            roleElector.handleMasterAnnouncement(newMasterId, term);
+        } else if (parts.length >= 3) {
+            // 兼容旧格式
             String newMasterId = parts[1];
             String role = parts[2];
             
@@ -183,6 +222,26 @@ public class HeartbeatManager {
             executeCommand(command);
             writer.println("OK");
         }
+    }
+
+    /**
+     * 处理快照请求
+     */
+    private void handleSnapshotRequest(PrintWriter writer) {
+        StoreEngine engine = DefaultStoreEngine.getInstance();
+        List<String> keys = engine.keys("*");
+        
+        writer.println("SNAPSHOT_START " + keys.size());
+        
+        for (String key : keys) {
+            String value = engine.get(key);
+            if (value != null) {
+                writer.println(key + " " + value);
+            }
+        }
+        
+        writer.println("SNAPSHOT_END");
+        writer.flush();
     }
 
     private void executeCommand(String command) {
@@ -244,7 +303,7 @@ public class HeartbeatManager {
                     break;
             }
         } catch (Exception e) {
-            // ignore
+            System.err.println("[HeartbeatManager] Failed to execute command: " + e.getMessage());
         }
     }
 
@@ -273,7 +332,7 @@ public class HeartbeatManager {
              PrintWriter writer = new PrintWriter(new OutputStreamWriter(socket.getOutputStream()), true);
              BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
             
-            writer.println("HEARTBEAT " + config.getSelfId() + " " + config.getSelfNode().getRole());
+            writer.println("HEARTBEAT " + config.getSelfId() + " " + config.getSelfNode().getRole() + " " + config.getCurrentTerm());
             reader.readLine();
             
         } catch (IOException e) {
@@ -291,13 +350,8 @@ public class HeartbeatManager {
     private void checkMasterStatus() {
         Node master = config.getMaster();
         if (master == null || !master.isAlive()) {
-            triggerElection();
+            roleElector.startElection();
         }
-    }
-
-    private void triggerElection() {
-        RoleElector elector = new RoleElector(config);
-        elector.startElection();
     }
 
     public void stop() {
@@ -332,20 +386,73 @@ public class HeartbeatManager {
             
             if (response != null && response.startsWith("MASTER")) {
                 String[] parts = response.split("\\s+");
-                if (parts.length >= 4) {
+                if (parts.length >= 5) {
                     String masterId = parts[1];
                     String masterHost = parts[2];
                     int masterClientPort = Integer.parseInt(parts[3]);
+                    long term = Long.parseLong(parts[4]);
                     
                     Node masterNode = new Node(masterId, masterHost, masterClientPort, clusterPort);
                     masterNode.setRole(NodeRole.MASTER);
                     config.addNode(masterNode);
+                    
+                    // 更新任期
+                    config.setCurrentTerm(term);
+                    
+                    // 设置自己为从节点
+                    Node self = config.getSelfNode();
+                    if (self != null) {
+                        self.setRole(NodeRole.SLAVE);
+                    }
+                    
+                    // 请求全量同步
+                    syncFromMaster(masterHost, clusterPort);
                 }
                 return true;
             }
         } catch (IOException e) {
-            // ignore
+            System.err.println("[HeartbeatManager] Failed to join cluster: " + e.getMessage());
         }
         return false;
+    }
+
+    /**
+     * 从 master 同步全量数据
+     */
+    private void syncFromMaster(String masterHost, int clusterPort) {
+        System.out.println("[HeartbeatManager] Starting full sync from master " + masterHost + ":" + clusterPort);
+        
+        try (Socket socket = new Socket(masterHost, clusterPort);
+             PrintWriter writer = new PrintWriter(new OutputStreamWriter(socket.getOutputStream()), true);
+             BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
+            
+            writer.println("SNAPSHOT");
+            
+            String line;
+            int count = 0;
+            StoreEngine engine = DefaultStoreEngine.getInstance();
+            
+            while ((line = reader.readLine()) != null) {
+                if (line.startsWith("SNAPSHOT_START")) {
+                    String[] parts = line.split("\\s+");
+                    count = Integer.parseInt(parts[1]);
+                    System.out.println("[HeartbeatManager] Syncing " + count + " keys");
+                } else if (line.startsWith("SNAPSHOT_END")) {
+                    break;
+                } else {
+                    int spaceIdx = line.indexOf(' ');
+                    if (spaceIdx > 0) {
+                        String key = line.substring(0, spaceIdx);
+                        String value = line.substring(spaceIdx + 1);
+                        engine.set(key, value);
+                    }
+                }
+            }
+            
+            System.out.println("[HeartbeatManager] Full sync completed");
+            
+        } catch (IOException e) {
+            System.err.println("[HeartbeatManager] Failed to sync from master: " + e.getMessage());
+        }
     }
 }

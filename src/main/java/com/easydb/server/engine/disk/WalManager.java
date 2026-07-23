@@ -10,7 +10,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 public class WalManager {
@@ -48,12 +50,14 @@ public class WalManager {
         }
     }
 
-    public synchronized void batchWrite(String command, java.util.Map<String, String> entries) {
+    public synchronized void batchWrite(String command, Map<String, String> entries) {
         try {
             StringBuilder sb = new StringBuilder();
-            for (java.util.Map.Entry<String, String> entry : entries.entrySet()) {
-                sb.append(command).append(" ").append(entry.getKey()).append(" ").append(entry.getValue() != null ? entry.getValue() : "").append(Constants.LINE_SEPARATOR);
+            sb.append(command).append(" ");
+            for (Map.Entry<String, String> entry : entries.entrySet()) {
+                sb.append(entry.getKey()).append(" ").append(entry.getValue() != null ? entry.getValue() : "").append(" ");
             }
+            sb.append(Constants.LINE_SEPARATOR);
             byte[] data = ByteUtils.toBytes(sb.toString());
             ByteBuffer buffer = ByteBuffer.wrap(data);
             writeChannel.write(buffer);
@@ -63,12 +67,14 @@ public class WalManager {
         }
     }
 
-    public synchronized void batchWriteDel(String command, java.util.List<String> keys) {
+    public synchronized void batchWriteDel(String command, List<String> keys) {
         try {
             StringBuilder sb = new StringBuilder();
+            sb.append(command).append(" ");
             for (String key : keys) {
-                sb.append(command).append(" ").append(key).append(" ").append(Constants.LINE_SEPARATOR);
+                sb.append(key).append(" ");
             }
+            sb.append(Constants.LINE_SEPARATOR);
             byte[] data = ByteUtils.toBytes(sb.toString());
             ByteBuffer buffer = ByteBuffer.wrap(data);
             writeChannel.write(buffer);
@@ -78,6 +84,10 @@ public class WalManager {
         }
     }
 
+    /**
+     * 回放 WAL，支持所有命令格式
+     * @return 记录列表，格式：[command, key1, value1, key2, value2, ...]
+     */
     public synchronized List<String[]> replay() {
         List<String[]> records = new CopyOnWriteArrayList<>();
         File file = new File(WAL_FILE);
@@ -93,12 +103,57 @@ public class WalManager {
                 if (line.isEmpty()) {
                     continue;
                 }
-                String[] parts = line.split(" ", 3);
-                if (parts.length >= 2) {
-                    String command = parts[0];
-                    String key = parts[1];
-                    String value = parts.length == 3 ? parts[2] : null;
-                    records.add(new String[]{command, key, value});
+                
+                String[] parts = line.split("\\s+");
+                if (parts.length >= 1) {
+                    String command = parts[0].toUpperCase();
+                    
+                    // 根据命令类型处理不同格式
+                    switch (command) {
+                        case Constants.COMMAND_SET:
+                            if (parts.length >= 3) {
+                                String key = parts[1];
+                                StringBuilder valueBuilder = new StringBuilder();
+                                for (int i = 2; i < parts.length; i++) {
+                                    if (i > 2) valueBuilder.append(" ");
+                                    valueBuilder.append(parts[i]);
+                                }
+                                records.add(new String[]{command, key, valueBuilder.toString()});
+                            }
+                            break;
+                        case Constants.COMMAND_DEL:
+                            if (parts.length >= 2) {
+                                records.add(new String[]{command, parts[1], null});
+                            }
+                            break;
+                        case Constants.COMMAND_MSET:
+                            if (parts.length >= 4 && (parts.length - 1) % 2 == 0) {
+                                String[] msetRecord = new String[parts.length];
+                                System.arraycopy(parts, 0, msetRecord, 0, parts.length);
+                                records.add(msetRecord);
+                            }
+                            break;
+                        case Constants.COMMAND_MDEL:
+                            if (parts.length >= 2) {
+                                String[] mdelRecord = new String[parts.length];
+                                System.arraycopy(parts, 0, mdelRecord, 0, parts.length);
+                                records.add(mdelRecord);
+                            }
+                            break;
+                        case Constants.COMMAND_CREATE:
+                            if (parts.length >= 2) {
+                                records.add(new String[]{command, parts[1], null});
+                            }
+                            break;
+                        case Constants.COMMAND_DROP:
+                            if (parts.length >= 2) {
+                                records.add(new String[]{command, parts[1], null});
+                            }
+                            break;
+                        default:
+                            // 未知命令，记录原始格式
+                            records.add(parts);
+                    }
                 }
             }
         } catch (IOException e) {

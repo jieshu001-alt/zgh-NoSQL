@@ -88,6 +88,13 @@ public class ServerBootstrap {
         heartbeatManager.start();
         replicationManager.start();
         
+        // 设置复制回调：当 master 写入数据时，自动转发到所有 slave
+        DefaultStoreEngine.getInstance().setReplicationCallback(command -> {
+            if (replicationManager != null) {
+                replicationManager.replicateCommand(command);
+            }
+        });
+        
         if (joinHost != null && joinClusterPort > 0) {
             if (heartbeatManager.joinCluster(joinHost, joinClusterPort)) {
                 System.out.println("Successfully joined cluster at " + joinHost + ":" + joinClusterPort);

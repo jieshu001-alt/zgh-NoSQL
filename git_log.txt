@@ -1,59 +1,193 @@
-Easy-DB Distributed NoSQL Database System - Git Commit Log (Simulated)
+Easy-DB Distributed NoSQL Database System - Git Commit Log
 ======================================================================
 
-[2026-07-12 09:00:00] Initial project setup
-- Created Maven project skeleton with pom.xml
-- Added fastjson dependency for JSON serialization
-- Configured maven-assembly-plugin for fat jar packaging
+Commit 1: 1c70d219b3064807fe215ca4fd8b8d0bf813b324
+Author: 3221153 <2183459233@qq.com>
+Date: 2026-07-14 16:02:54
+Message: zbh代码
 
-[2026-07-12 09:30:00] Common module implementation
-- Created Constants class with default ports, encoding, file paths
-- Implemented ByteUtils for byte conversion utilities
-- Implemented Serializer for object serialization/deserialization
+Files (32):
+  - pom.xml (Maven project config with fastjson, assembly plugin)
+  - src/main/java/com/easydb/Launcher.java (main entry, --server/--cli/--gui/--shell)
+  - src/main/java/com/easydb/common/constants/Constants.java
+  - src/main/java/com/easydb/common/utils/ByteUtils.java
+  - src/main/java/com/easydb/client/sdk/DatabaseClient.java (TCP client SDK)
+  - src/main/java/com/easydb/client/gui/GuiClient.java (Swing GUI)
+  - src/main/java/com/easydb/client/shell/ShellClient.java (single command client)
+  - src/main/java/com/easydb/server/net/SocketServer.java (multi-threaded TCP server)
+  - src/main/java/com/easydb/server/net/ClientHandler.java (per-client handler)
+  - src/main/java/com/easydb/server/net/RequestDecoder.java (protocol parser)
+  - src/main/java/com/easydb/server/http/HttpServer.java (HTTP REST server)
+  - src/main/java/com/easydb/server/http/HttpRequest.java
+  - src/main/java/com/easydb/server/http/HttpResponse.java
+  - src/main/java/com/easydb/server/http/RestDispatcher.java
+  - src/main/java/com/easydb/server/http/handler/KeyHandler.java
+  - src/main/java/com/easydb/server/http/handler/KeysListHandler.java
+  - src/main/java/com/easydb/server/http/handler/BatchHandler.java
+  - src/main/java/com/easydb/server/bootstrap/ServerBootstrap.java
+  - src/main/java/com/easydb/server/engine/mem/ConcurrentHashStore.java (in-memory store)
+  - src/main/java/com/easydb/server/engine/disk/WalManager.java (WAL logging)
+  - src/main/java/com/easydb/server/engine/disk/DataFileManager.java (file rotation)
+  - src/main/java/com/easydb/server/engine/index/Trie.java (prefix tree index)
+  - src/main/java/com/easydb/server/cluster/ClusterConfig.java
+  - src/main/java/com/easydb/server/cluster/Node.java
+  - src/main/java/com/easydb/server/cluster/NodeRole.java
+  - src/main/java/com/easydb/server/cluster/HeartbeatManager.java
+  - src/main/java/com/easydb/server/cluster/RoleElector.java
+  - src/main/java/com/easydb/server/cluster/ReplicationManager.java
 
-[2026-07-12 10:00:00] Storage engine core implementation
-- Created StoreEngine interface with SET/GET/DEL/KEYS/EXISTS methods
-- Implemented ConcurrentHashStore with thread-safe ConcurrentHashMap
-- Implemented WalManager with WAL write/replay/clear operations
-- Implemented DataFileManager with file rotation strategy (64MB max)
-- Implemented Compactor with Gzip compression and thread pool
+Summary: Initial complete project skeleton. C/S architecture with multi-threaded TCP server,
+HTTP REST API, Swing GUI client, interactive CLI, single-command shell client.
+Cluster support (heartbeat, election, replication) framework in place but not fully functional.
+Storage uses simple ConcurrentHashMap + append-only file rotation. Trie index in-memory only.
 
-[2026-07-12 10:30:00] Network communication layer
-- Implemented SocketServer with ServerSocket and thread pool
-- Implemented ClientHandler for client request processing
-- Implemented RequestDecoder for protocol parsing and response building
 
-[2026-07-12 11:00:00] HTTP RESTful layer
-- Implemented HttpRequest parser for method, path, headers, body
-- Implemented HttpResponse with JSON response format
-- Implemented RestDispatcher with path routing and method handling
-- Implemented KeyHandler and KeysListHandler for API endpoints
+Commit 2: e7bbdf9e2e5b023d6158e734666f6f3d466463ef
+Author: JieShu <jieshu001@gmail.com>
+Date: 2026-07-23 16:30:15
+Message: 郑根豪代码
 
-[2026-07-12 11:30:00] Server bootstrap and monitoring
-- Implemented ServerBootstrap with Socket and HTTP server startup
-- Added periodic monitor thread (every 5 seconds) to print key count
-- Added shutdown hook for graceful shutdown
+New/Modified Files:
+  - src/main/java/com/easydb/common/utils/Serializer.java (object serialization)
+  - src/main/java/com/easydb/server/engine/StoreEngine.java (store interface: SET/GET/DEL/KEYS/EXISTS/batch ops/collections)
+  - src/main/java/com/easydb/server/engine/DefaultStoreEngine.java (unified storage engine with WAL + disk + index + LSM-Tree)
+  - src/main/java/com/easydb/server/engine/disk/Compactor.java (file merge/compaction)
+  - Various data files (easy-db-*.data, easy-db.wal)
 
-[2026-07-12 12:00:00] Client SDK implementation
-- Implemented DatabaseClient with connection pool and retry
-- Supported SET/GET/DEL/KEYS/EXISTS operations
-- Handled multi-line response for KEYS command
+Summary: Refactored storage layer with StoreEngine interface. Added WAL-based persistence,
+file rotation with compaction, and LSM-Tree storage engine foundation.
+Provided through StoreEngine: basic CRUD, batch operations (MSET/MGET/MDEL), collections (CREATE/DROP/LIST).
 
-[2026-07-12 12:30:00] CLI client implementation
-- Implemented CliSession with interactive command loop
-- Supported all Easy-DB commands: SET, GET, DEL, KEYS, EXISTS, HELP, QUIT
 
-[2026-07-12 13:00:00] Shell client implementation
-- Implemented ShellClient for single command execution
-- Supported environment variables EASY_DB_HOST and EASY_DB_PORT
+[Uncommitted] Current Working Changes (Teacher Feedback Fixes)
+======================================================================
+Date: 2026-07-23
+Based on: Teacher defense feedback - 4 major issues identified
 
-[2026-07-12 13:30:00] GUI client implementation (Swing)
-- Created GuiClient with JFrame and JTabbedPane
-- Implemented "Quick Operations" tab with SET/GET/DEL/EXISTS/KEYS buttons
-- Implemented "Command Mode" tab with command input
-- Added connection status indicator with green/red lights
+Issue 1: rotate之后的文件压缩理解有误 (Fix: Rotate Compression)
+  - src/main/java/com/easydb/server/engine/disk/Compactor.java
+    * Rewrote submitCompaction() to do true merge-compression:
+      read all data files -> deduplicate (keep latest version) -> sort by key -> write to .gz
+    * Compressed files stay in data directory, readable by DataFileManager
+  - src/main/java/com/easydb/server/engine/disk/DataFileManager.java
+    * Added readByIndex() for offset-based key lookup via sparse index
+    * Modified scanByKey() to support reading .gz compressed files
+    * Added WriteResult inner class and write() method for proper offset recording
+    * Added setCompactor() to link compactor with file manager
+    * Enhanced file rotation with periodic compaction triggers
 
-[2026-07-12 14:00:00] Main launcher and final assembly
-- Implemented Launcher with --server, --cli, --gui, --shell options
-- Tested compilation and package build
-- Verified all modules work correctly together
+Issue 2: 没有实现索引功能 (Fix: Index Implementation)
+  - src/main/java/com/easydb/server/engine/index/SparseIndex.java [NEW]
+    * Implements key -> (fileIndex, offset, length) sparse index mapping
+    * Persistent storage to index.dat, auto-loaded on restart
+    * Thread-safe with ReadWriteLock
+    * IndexEntry class with getFileIndex(), getOffset(), getLength(), getValueLength()
+  - src/main/java/com/easydb/server/engine/index/Trie.java
+    * Refactored TrieNode to use ConcurrentHashMap for thread-safe children
+    * Added ReadWriteLock for insert/delete/search operations
+    * Fixed wildcard pattern matching (*xxx*, xxx*, *xxx, x*x)
+    * Added collectAllKeys() helper for full traversal
+
+Issue 3: LSMT没实现 (Fix: LSM-Tree Implementation)
+  - src/main/java/com/easydb/server/engine/lsm/MemTable.java [NEW]
+    * In-memory ordered table using ConcurrentSkipListMap
+    * Supports immutable state for safe flush-to-disk
+    * Size tracking with max threshold (64MB default)
+    * Proper tombstone support (null value for deleted keys)
+    * contains() correctly excludes tombstone entries
+  - src/main/java/com/easydb/server/engine/lsm/SSTable.java [NEW]
+    * Sorted String Table stored as uncompressed text (supports RandomAccessFile seek)
+    * Separate .sst (data) and .idx (sparse index) files per table
+    * Sparse index: every 100th entry, stores key + byte offset
+    * get() uses binary-search on index -> RandomAccessFile seek -> sequential scan
+    * getAllEntries() for merge operations, getAllKeys() for prefix queries
+    * Supports deletion of SSTable files on compaction
+  - src/main/java/com/easydb/server/engine/lsm/LSMTree.java [NEW]
+    * 3-level storage: MemTable -> Level 0 -> Level 1 -> Level 2
+    * Auto-flush MemTable to Level 0 SSTable when size exceeds threshold
+    * Background merge daemon checks every 30 seconds
+    * Level 0 merge: all L0 + all L1 SSTables -> deduplicated -> new L1 SSTable
+    * Tombstone cleanup during merge (entries with null values removed)
+    * Reads search in order: active MemTable -> immutable MemTables -> L0 -> L1 -> L2
+    * Loads existing SSTables on startup from disk
+  - src/main/java/com/easydb/server/engine/DefaultStoreEngine.java
+    * Replaced ConcurrentHashStore with LSMTree as primary storage
+    * Removed unused SparseIndex integration (LSM-Tree SSTables handle their own indexing)
+    * Simplified get() to use LSM-Tree only (no disk fallback scan)
+    * Integrated WAL replay for all commands (SET/DEL/MSET/MDEL/CREATE/DROP)
+
+Issue 4: 集群没实现 (Fix: Cluster Implementation)
+  - src/main/java/com/easydb/server/cluster/ClusterConfig.java
+    * Added term-based fields: currentTerm (volatile long), votedFor (volatile String)
+    * Added incrementTerm(), resetVote(), getCurrentTerm(), setCurrentTerm()
+    * Changed nodes list to CopyOnWriteArrayList for thread safety
+  - src/main/java/com/easydb/server/cluster/RoleElector.java
+    * Rewrote with proper Raft-like term-based election:
+      - Random election timeout (3-6 seconds) to prevent split votes
+      - incrementTerm() on election start, vote for self
+      - RequestVotes with term comparison (ELECT <candidateId> <term>)
+      - Majority calculation: (aliveNodeCount + 1) / 2
+      - Master announcement broadcast on win (ACK <masterId> MASTER <term>)
+      - Vote granting rules: higher term resets vote, same term can re-vote
+      - handleVoteRequest() and handleMasterAnnouncement() for incoming messages
+    * Thread-safe with electionInProgress flag
+  - src/main/java/com/easydb/server/cluster/HeartbeatManager.java
+    * Integrated term-based election (ELECT/VOTE/ACK protocols with term numbers)
+    * Added SNAPSHOT protocol for full data sync:
+      - SNAPSHOT_START <count> -> key-value pairs -> SNAPSHOT_END
+      - syncFromMaster() requests full snapshot on join
+    * Extended command execution for replication: SET/DEL/MSET/MDEL/CREATE/DROP
+    * Heartbeat messages include term number: HEARTBEAT <nodeId> <role> <term>
+    * Master monitor checks master liveness and triggers election
+    * Updated JOIN response to include master term number
+  - src/main/java/com/easydb/server/cluster/ReplicationManager.java
+    * replicateCommand() forwards to all slaves via thread pool
+    * Real-time replication: master write -> callback -> ReplicationManager -> slave nodes
+  - src/main/java/com/easydb/server/bootstrap/ServerBootstrap.java
+    * Wire replication callback: DefaultStoreEngine.setReplicationCallback() ->
+      ReplicationManager.replicateCommand()
+    * Master auto-replicates every SET/DEL/MSET/MDEL/CREATE/DROP to slaves
+
+Additional Bug Fixes:
+  - src/main/java/com/easydb/server/engine/disk/WalManager.java
+    * Rewrote replay() to handle ALL command formats:
+      SET key value, DEL key, MSET k1 v1 k2 v2 ..., MDEL k1 k2 ..., CREATE name, DROP name
+    * batchWrite() writes full MSET/MDEL commands matching replay format
+    * Added batchWriteDel() for MDEL commands
+  - src/main/java/com/easydb/client/gui/GuiClient.java
+    * Fixed variable name conflict: renamed "value" to "valueBuilder" in executeCommand()
+  - src/main/java/com/easydb/client/shell/ShellClient.java
+    * Fixed variable name conflict: renamed "value" to "valueBuilder" in main()
+  - src/main/java/com/easydb/server/http/handler/BatchHandler.java
+    * Fixed type cast error: Map<String,Object> -> Map<String,String> conversion
+
+Modified Files Summary:
+  M  src/main/java/com/easydb/client/gui/GuiClient.java
+  M  src/main/java/com/easydb/client/shell/ShellClient.java
+  M  src/main/java/com/easydb/server/bootstrap/ServerBootstrap.java
+  M  src/main/java/com/easydb/server/cluster/ClusterConfig.java
+  M  src/main/java/com/easydb/server/cluster/HeartbeatManager.java
+  M  src/main/java/com/easydb/server/cluster/RoleElector.java
+  M  src/main/java/com/easydb/server/engine/DefaultStoreEngine.java
+  M  src/main/java/com/easydb/server/engine/disk/Compactor.java
+  M  src/main/java/com/easydb/server/engine/disk/DataFileManager.java
+  M  src/main/java/com/easydb/server/engine/disk/WalManager.java
+  M  src/main/java/com/easydb/server/engine/index/Trie.java
+  M  src/main/java/com/easydb/server/http/handler/BatchHandler.java
+
+New Files:
+  ?? src/main/java/com/easydb/server/engine/index/SparseIndex.java
+  ?? src/main/java/com/easydb/server/engine/lsm/MemTable.java
+  ?? src/main/java/com/easydb/server/engine/lsm/SSTable.java
+  ?? src/main/java/com/easydb/server/engine/lsm/LSMTree.java
+
+Architecture Decision Notes:
+  - SparseIndex removed from DefaultStoreEngine because LSM-Tree SSTables each
+    have their own .idx sparse index files, making a separate global index redundant
+  - SSTable data stored uncompressed (text format) to support RandomAccessFile seek
+    for efficient offset-based lookups; compression can be added at the SSTable level
+    as a future optimization
+  - LSM-Tree tombstone uses null value (not empty string) to distinguish "deleted"
+    from "empty value", and contains() checks value != null
+  - Replication uses push model: master writes locally then forwards to slaves;
+    slave writes are applied locally without further replication to prevent loops

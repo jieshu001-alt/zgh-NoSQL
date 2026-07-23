@@ -43,14 +43,14 @@ public class ShellClient {
                         System.exit(1);
                     }
                     String key = args[1];
-                    StringBuilder value = new StringBuilder();
+                    StringBuilder valueBuilder = new StringBuilder();
                     for (int i = 2; i < args.length; i++) {
                         if (i > 2) {
-                            value.append(" ");
+                            valueBuilder.append(" ");
                         }
-                        value.append(args[i]);
+                        valueBuilder.append(args[i]);
                     }
-                    System.out.println(client.set(key, value.toString()));
+                    System.out.println(client.set(key, valueBuilder.toString()));
                     break;
                 case "GET":
                     if (args.length < 2) {

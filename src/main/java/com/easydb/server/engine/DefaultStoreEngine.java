@@ -1,46 +1,33 @@
 package com.easydb.server.engine;
 
 import com.easydb.common.constants.Constants;
-import com.easydb.common.utils.Serializer;
-import com.easydb.server.engine.disk.Compactor;
-import com.easydb.server.engine.disk.DataFileManager;
 import com.easydb.server.engine.disk.WalManager;
-import com.easydb.server.engine.index.Trie;
-import com.easydb.server.engine.mem.ConcurrentHashStore;
+import com.easydb.server.engine.lsm.LSMTree;
 
-import java.io.IOException;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
-import java.util.regex.Pattern;
 
 public class DefaultStoreEngine implements StoreEngine {
 
     private static volatile DefaultStoreEngine instance;
     
-    private final ConcurrentHashStore memoryStore = new ConcurrentHashStore();
+    private final LSMTree lsmTree = new LSMTree();
     private final WalManager walManager;
-    private final DataFileManager dataFileManager;
-    private final Compactor compactor;
-    private final ScheduledExecutorService flushExecutor;
     private final Set<String> collections = ConcurrentHashMap.newKeySet();
-    private final Trie keyIndex = new Trie();
+    
+    // 复制回调接口
+    public interface ReplicationCallback {
+        void onWrite(String command);
+    }
+    
+    private volatile ReplicationCallback replicationCallback;
 
     private DefaultStoreEngine() {
         this.walManager = new WalManager();
-        this.compactor = new Compactor();
-        this.dataFileManager = new DataFileManager();
-        this.dataFileManager.setCompactor(compactor);
-        this.flushExecutor = Executors.newScheduledThreadPool(1);
-        
         replayWal();
-        startPeriodicFlush();
     }
 
     public static DefaultStoreEngine getInstance() {
@@ -54,78 +41,96 @@ public class DefaultStoreEngine implements StoreEngine {
         return instance;
     }
 
+    /**
+     * 设置复制回调
+     */
+    public void setReplicationCallback(ReplicationCallback callback) {
+        this.replicationCallback = callback;
+    }
+
     private void replayWal() {
         List<String[]> records = walManager.replay();
         for (String[] record : records) {
-            String command = record[0].toUpperCase();
-            String key = record[1];
-            String value = record[2];
+            if (record.length == 0) {
+                continue;
+            }
             
-            if (Constants.COMMAND_SET.equals(command)) {
-                memoryStore.put(key, value);
-                keyIndex.insert(key);
-                try {
-                    dataFileManager.write(key, value);
-                } catch (IOException e) {
-                    // ignore
-                }
-            } else if (Constants.COMMAND_DEL.equals(command)) {
-                memoryStore.remove(key);
-                keyIndex.delete(key);
+            String command = record[0].toUpperCase();
+            
+            switch (command) {
+                case Constants.COMMAND_SET:
+                    if (record.length >= 3) {
+                        lsmTree.put(record[1], record[2]);
+                    }
+                    break;
+                case Constants.COMMAND_DEL:
+                    if (record.length >= 2) {
+                        lsmTree.delete(record[1]);
+                    }
+                    break;
+                case Constants.COMMAND_MSET:
+                    if (record.length >= 4 && (record.length - 1) % 2 == 0) {
+                        for (int i = 1; i < record.length; i += 2) {
+                            String key = record[i];
+                            String value = record[i + 1];
+                            lsmTree.put(key, value);
+                        }
+                    }
+                    break;
+                case Constants.COMMAND_MDEL:
+                    if (record.length >= 2) {
+                        for (int i = 1; i < record.length; i++) {
+                            lsmTree.delete(record[i]);
+                        }
+                    }
+                    break;
+                case Constants.COMMAND_CREATE:
+                    if (record.length >= 2) {
+                        collections.add(record[1]);
+                    }
+                    break;
+                case Constants.COMMAND_DROP:
+                    if (record.length >= 2) {
+                        collections.remove(record[1]);
+                    }
+                    break;
             }
         }
         walManager.clear();
     }
 
-    private void startPeriodicFlush() {
-        flushExecutor.scheduleAtFixedRate(() -> {
-            // Periodic flush is handled asynchronously
-        }, 10, 10, TimeUnit.SECONDS);
+    private void replicate(String command) {
+        if (replicationCallback != null) {
+            replicationCallback.onWrite(command);
+        }
     }
 
     @Override
     public String set(String key, String value) {
         walManager.write(Constants.COMMAND_SET, key, value);
-        memoryStore.put(key, value);
-        keyIndex.insert(key);
+        lsmTree.put(key, value);
         
-        flushToDataFile(key, value);
+        // 触发实时复制
+        replicate(Constants.COMMAND_SET + " " + key + " " + value);
         
         return Constants.OK_RESPONSE;
     }
 
-    private void flushToDataFile(String key, String value) {
-        flushExecutor.execute(() -> {
-            try {
-                dataFileManager.write(key, value);
-            } catch (IOException e) {
-                // ignore
-            }
-        });
-    }
-
     @Override
     public String get(String key) {
-        Object value = memoryStore.get(key);
-        if (value != null) {
-            return Serializer.serialize(value);
-        }
-        
-        String diskValue = dataFileManager.scanByKey(key);
-        if (diskValue != null) {
-            memoryStore.put(key, diskValue);
-            return diskValue;
-        }
-        
-        return null;
+        return lsmTree.get(key);
     }
 
     @Override
     public String del(String key) {
         walManager.write(Constants.COMMAND_DEL, key, null);
-        Object value = memoryStore.remove(key);
-        keyIndex.delete(key);
-        return value != null ? Constants.OK_RESPONSE : Constants.NULL_VALUE;
+        boolean existed = lsmTree.contains(key);
+        lsmTree.delete(key);
+        
+        // 触发实时复制
+        replicate(Constants.COMMAND_DEL + " " + key);
+        
+        return existed ? Constants.OK_RESPONSE : Constants.NULL_VALUE;
     }
 
     @Override
@@ -135,87 +140,69 @@ public class DefaultStoreEngine implements StoreEngine {
         }
         
         if (pattern.equals("*")) {
-            return keyIndex.searchByPrefix("");
+            return lsmTree.getKeys();
         }
         
         if (pattern.endsWith("*") && !pattern.substring(0, pattern.length() - 1).contains("*")) {
             String prefix = pattern.substring(0, pattern.length() - 1);
-            return keyIndex.searchByPrefix(prefix);
+            return lsmTree.getKeysWithPrefix(prefix);
         }
         
-        return memoryStore.keys(pattern);
+        return lsmTree.getKeys();
     }
 
     @Override
     public boolean exists(String key) {
-        return memoryStore.containsKey(key);
+        return lsmTree.contains(key);
     }
 
     @Override
     public int size() {
-        return memoryStore.size();
+        return lsmTree.getKeys().size();
     }
 
     @Override
     public void shutdown() {
-        flushExecutor.shutdown();
-        compactor.shutdown();
+        lsmTree.close();
         walManager.close();
-        dataFileManager.close();
     }
 
     @Override
     public void batchSet(Map<String, String> entries) {
-        walManager.batchWrite(Constants.COMMAND_SET, entries);
+        walManager.batchWrite(Constants.COMMAND_MSET, entries);
         
+        StringBuilder cmdBuilder = new StringBuilder(Constants.COMMAND_MSET);
         for (Map.Entry<String, String> entry : entries.entrySet()) {
-            memoryStore.put(entry.getKey(), entry.getValue());
-            keyIndex.insert(entry.getKey());
+            lsmTree.put(entry.getKey(), entry.getValue());
+            cmdBuilder.append(" ").append(entry.getKey()).append(" ").append(entry.getValue());
         }
         
-        flushBatchToDataFile(entries);
+        // 触发实时复制
+        replicate(cmdBuilder.toString());
     }
 
     @Override
     public List<String> batchGet(List<String> keys) {
         List<String> results = new ArrayList<>();
         for (String key : keys) {
-            Object value = memoryStore.get(key);
-            if (value != null) {
-                results.add(Serializer.serialize(value));
-            } else {
-                String diskValue = dataFileManager.scanByKey(key);
-                if (diskValue != null) {
-                    memoryStore.put(key, diskValue);
-                    results.add(diskValue);
-                } else {
-                    results.add(null);
-                }
-            }
+            String value = lsmTree.get(key);
+            results.add(value);
         }
         return results;
     }
 
     @Override
     public void batchDel(List<String> keys) {
-        walManager.batchWriteDel(Constants.COMMAND_DEL, keys);
+        walManager.batchWriteDel(Constants.COMMAND_MDEL, keys);
         
+        StringBuilder cmdBuilder = new StringBuilder(Constants.COMMAND_MDEL);
         for (String key : keys) {
-            memoryStore.remove(key);
-            keyIndex.delete(key);
+            lsmTree.delete(key);
+            cmdBuilder.append(" ").append(key);
         }
-    }
-
-    private void flushBatchToDataFile(Map<String, String> entries) {
-        flushExecutor.execute(() -> {
-            try {
-                for (Map.Entry<String, String> entry : entries.entrySet()) {
-                    dataFileManager.write(entry.getKey(), entry.getValue());
-                }
-            } catch (IOException e) {
-                // ignore
-            }
-        });
+        
+        // 触发实时复制
+        replicate(cmdBuilder.toString());
     }
 
     @Override
@@ -223,7 +210,11 @@ public class DefaultStoreEngine implements StoreEngine {
         if (!isValidCollectionName(name)) {
             throw new IllegalArgumentException("Invalid collection name: " + name);
         }
+        walManager.write(Constants.COMMAND_CREATE, name, null);
         collections.add(name);
+        
+        // 触发实时复制
+        replicate(Constants.COMMAND_CREATE + " " + name);
     }
 
     @Override
@@ -237,7 +228,12 @@ public class DefaultStoreEngine implements StoreEngine {
             return Constants.ERROR_PREFIX + "Collection is not empty: " + name;
         }
         
+        walManager.write(Constants.COMMAND_DROP, name, null);
         collections.remove(name);
+        
+        // 触发实时复制
+        replicate(Constants.COMMAND_DROP + " " + name);
+        
         return Constants.OK_RESPONSE;
     }
 
@@ -249,7 +245,7 @@ public class DefaultStoreEngine implements StoreEngine {
     @Override
     public List<String> keysInCollection(String collectionName) {
         String prefix = collectionName + Constants.COLLECTION_SEPARATOR;
-        List<String> allKeys = keyIndex.searchByPrefix(prefix);
+        List<String> allKeys = lsmTree.getKeysWithPrefix(prefix);
         List<String> result = new ArrayList<>();
         for (String key : allKeys) {
             if (key.startsWith(prefix)) {
@@ -266,6 +262,6 @@ public class DefaultStoreEngine implements StoreEngine {
         if (name.length() > Constants.COLLECTION_NAME_MAX_LENGTH) {
             return false;
         }
-        return Pattern.matches("^[a-zA-Z0-9_]+$", name);
+        return java.util.regex.Pattern.matches("^[a-zA-Z0-9_]+$", name);
     }
 }

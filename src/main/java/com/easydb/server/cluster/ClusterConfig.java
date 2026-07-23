@@ -2,6 +2,7 @@ package com.easydb.server.cluster;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
 
 public class ClusterConfig {
@@ -15,7 +16,11 @@ public class ClusterConfig {
     private String selfHost;
     private int selfClientPort;
     private int selfClusterPort;
-    private List<Node> nodes = new ArrayList<>();
+    private List<Node> nodes = new CopyOnWriteArrayList<>();
+    
+    // 任期相关
+    private volatile long currentTerm = 0;
+    private volatile String votedFor = null;
 
     public ClusterConfig(String selfId, String selfHost, int selfClientPort, int selfClusterPort) {
         this.selfId = selfId;
@@ -77,5 +82,37 @@ public class ClusterConfig {
 
     public Node getSelfNode() {
         return getNode(selfId);
+    }
+
+    // ===== 任期相关方法 =====
+
+    public long getCurrentTerm() {
+        return currentTerm;
+    }
+
+    public void setCurrentTerm(long term) {
+        this.currentTerm = term;
+    }
+
+    public String getVotedFor() {
+        return votedFor;
+    }
+
+    public void setVotedFor(String nodeId) {
+        this.votedFor = nodeId;
+    }
+
+    /**
+     * 增加任期号
+     */
+    public long incrementTerm() {
+        return ++currentTerm;
+    }
+
+    /**
+     * 重置投票状态（进入新任期时调用）
+     */
+    public void resetVote() {
+        this.votedFor = null;
     }
 }

@@ -24,7 +24,12 @@ public class BatchHandler {
         
         try {
             JSONObject json = JSON.parseObject(body);
-            Map<String, String> entries = json.getInnerMap();
+            @SuppressWarnings("unchecked")
+            Map<String, Object> rawEntries = json.getInnerMap();
+            Map<String, String> entries = new java.util.HashMap<>();
+            for (Map.Entry<String, Object> entry : rawEntries.entrySet()) {
+                entries.put(entry.getKey(), String.valueOf(entry.getValue()));
+            }
             storeEngine.batchSet(entries);
             response.writeSuccess("{\"status\":\"OK\"}");
         } catch (Exception e) {

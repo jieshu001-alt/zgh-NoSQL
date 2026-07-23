@@ -395,12 +395,12 @@ public class GuiClient extends JFrame {
                         return;
                     }
                     String key = parts[1];
-                    StringBuilder value = new StringBuilder();
+                    StringBuilder valueBuilder = new StringBuilder();
                     for (int i = 2; i < parts.length; i++) {
-                        if (i > 2) value.append(" ");
-                        value.append(parts[i]);
+                        if (i > 2) valueBuilder.append(" ");
+                        valueBuilder.append(parts[i]);
                     }
-                    resultArea.append("< " + client.set(key, value.toString()) + "\n");
+                    resultArea.append("< " + client.set(key, valueBuilder.toString()) + "\n");
                     break;
                 case "GET":
                     if (parts.length < 2) {
