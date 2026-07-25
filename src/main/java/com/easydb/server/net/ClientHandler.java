@@ -83,6 +83,38 @@ public class ClientHandler implements Runnable {
                 return handleDrop(parts);
             case Constants.COMMAND_COLLECTIONS:
                 return handleCollections(parts);
+            case Constants.COMMAND_COLL_SET:
+                return handleCollectionSet(parts);
+            case Constants.COMMAND_COLL_GET:
+                return handleCollectionGet(parts);
+            case Constants.COMMAND_COLL_DEL:
+                return handleCollectionDel(parts);
+            case Constants.COMMAND_COLL_KEYS:
+                return handleCollectionKeys(parts);
+            case Constants.COMMAND_LPUSH:
+                return handleLpush(parts);
+            case Constants.COMMAND_RPUSH:
+                return handleRpush(parts);
+            case Constants.COMMAND_LPOP:
+                return handleLpop(parts);
+            case Constants.COMMAND_RPOP:
+                return handleRpop(parts);
+            case Constants.COMMAND_LLEN:
+                return handleLlen(parts);
+            case Constants.COMMAND_SADD:
+                return handleSadd(parts);
+            case Constants.COMMAND_SMEMBERS:
+                return handleSmembers(parts);
+            case Constants.COMMAND_SREM:
+                return handleSrem(parts);
+            case Constants.COMMAND_HSET:
+                return handleHset(parts);
+            case Constants.COMMAND_HGET:
+                return handleHget(parts);
+            case Constants.COMMAND_HDEL:
+                return handleHdel(parts);
+            case Constants.COMMAND_HGETALL:
+                return handleHgetall(parts);
             default:
                 return RequestDecoder.buildErrorResponse("Unknown command: " + command);
         }
@@ -321,5 +353,238 @@ public class ClientHandler implements Runnable {
     private String handleCollections(String[] parts) {
         List<String> collections = storeEngine.listCollections();
         return RequestDecoder.buildKeysResponse(collections);
+    }
+
+    private String handleCollectionSet(String[] parts) {
+        if (parts.length < 4) {
+            return RequestDecoder.buildErrorResponse("Usage: C_SET collection key value");
+        }
+        String collection = parts[1];
+        String key = parts[2];
+        StringBuilder valueBuilder = new StringBuilder();
+        for (int i = 3; i < parts.length; i++) {
+            if (i > 3) valueBuilder.append(" ");
+            valueBuilder.append(parts[i]);
+        }
+        String command = "C_SET " + collection + " " + key + " " + valueBuilder.toString();
+        
+        if (!checkAndReplicate(command)) {
+            return Constants.ERROR_PREFIX + "Failed to replicate to master" + Constants.LINE_SEPARATOR;
+        }
+        
+        String result = storeEngine.collectionSet(collection, key, valueBuilder.toString());
+        replicateToSlaves(command);
+        return result.startsWith(Constants.ERROR_PREFIX) ? result + Constants.LINE_SEPARATOR : result + Constants.LINE_SEPARATOR;
+    }
+
+    private String handleCollectionGet(String[] parts) {
+        if (parts.length < 3) {
+            return RequestDecoder.buildErrorResponse("Usage: C_GET collection key");
+        }
+        String value = storeEngine.collectionGet(parts[1], parts[2]);
+        return RequestDecoder.buildResponse(value);
+    }
+
+    private String handleCollectionDel(String[] parts) {
+        if (parts.length < 3) {
+            return RequestDecoder.buildErrorResponse("Usage: C_DEL collection key");
+        }
+        String collection = parts[1];
+        String key = parts[2];
+        String command = "C_DEL " + collection + " " + key;
+        
+        if (!checkAndReplicate(command)) {
+            return Constants.ERROR_PREFIX + "Failed to replicate to master" + Constants.LINE_SEPARATOR;
+        }
+        
+        String result = storeEngine.collectionDel(collection, key);
+        replicateToSlaves(command);
+        return result.startsWith(Constants.ERROR_PREFIX) ? result + Constants.LINE_SEPARATOR : 
+               (Constants.OK_RESPONSE.equals(result) ? result + Constants.LINE_SEPARATOR : RequestDecoder.buildResponse(null));
+    }
+
+    private String handleCollectionKeys(String[] parts) {
+        if (parts.length < 2) {
+            return RequestDecoder.buildErrorResponse("Usage: C_KEYS collection");
+        }
+        List<String> keys = storeEngine.collectionKeys(parts[1]);
+        return RequestDecoder.buildKeysResponse(keys);
+    }
+
+    // ================ List handlers ================
+    
+    private String handleLpush(String[] parts) {
+        if (parts.length < 3) {
+            return RequestDecoder.buildErrorResponse("Usage: LPUSH key value");
+        }
+        String key = parts[1];
+        StringBuilder valueBuilder = new StringBuilder();
+        for (int i = 2; i < parts.length; i++) {
+            if (i > 2) valueBuilder.append(" ");
+            valueBuilder.append(parts[i]);
+        }
+        String command = "LPUSH " + key + " " + valueBuilder.toString();
+        
+        if (!checkAndReplicate(command)) {
+            return Constants.ERROR_PREFIX + "Failed to replicate to master" + Constants.LINE_SEPARATOR;
+        }
+        
+        String result = storeEngine.lpush(key, valueBuilder.toString());
+        replicateToSlaves(command);
+        return result + Constants.LINE_SEPARATOR;
+    }
+
+    private String handleRpush(String[] parts) {
+        if (parts.length < 3) {
+            return RequestDecoder.buildErrorResponse("Usage: RPUSH key value");
+        }
+        String key = parts[1];
+        StringBuilder valueBuilder = new StringBuilder();
+        for (int i = 2; i < parts.length; i++) {
+            if (i > 2) valueBuilder.append(" ");
+            valueBuilder.append(parts[i]);
+        }
+        String command = "RPUSH " + key + " " + valueBuilder.toString();
+        
+        if (!checkAndReplicate(command)) {
+            return Constants.ERROR_PREFIX + "Failed to replicate to master" + Constants.LINE_SEPARATOR;
+        }
+        
+        String result = storeEngine.rpush(key, valueBuilder.toString());
+        replicateToSlaves(command);
+        return result + Constants.LINE_SEPARATOR;
+    }
+
+    private String handleLpop(String[] parts) {
+        if (parts.length < 2) {
+            return RequestDecoder.buildErrorResponse("Usage: LPOP key");
+        }
+        String value = storeEngine.lpop(parts[1]);
+        return RequestDecoder.buildResponse(value);
+    }
+
+    private String handleRpop(String[] parts) {
+        if (parts.length < 2) {
+            return RequestDecoder.buildErrorResponse("Usage: RPOP key");
+        }
+        String value = storeEngine.rpop(parts[1]);
+        return RequestDecoder.buildResponse(value);
+    }
+
+    private String handleLlen(String[] parts) {
+        if (parts.length < 2) {
+            return RequestDecoder.buildErrorResponse("Usage: LLEN key");
+        }
+        String len = storeEngine.llen(parts[1]);
+        return len + Constants.LINE_SEPARATOR;
+    }
+
+    // ================ Set handlers ================
+    
+    private String handleSadd(String[] parts) {
+        if (parts.length < 3) {
+            return RequestDecoder.buildErrorResponse("Usage: SADD key member");
+        }
+        String key = parts[1];
+        StringBuilder valueBuilder = new StringBuilder();
+        for (int i = 2; i < parts.length; i++) {
+            if (i > 2) valueBuilder.append(" ");
+            valueBuilder.append(parts[i]);
+        }
+        String command = "SADD " + key + " " + valueBuilder.toString();
+        
+        if (!checkAndReplicate(command)) {
+            return Constants.ERROR_PREFIX + "Failed to replicate to master" + Constants.LINE_SEPARATOR;
+        }
+        
+        String result = storeEngine.sadd(key, valueBuilder.toString());
+        replicateToSlaves(command);
+        return result + Constants.LINE_SEPARATOR;
+    }
+
+    private String handleSmembers(String[] parts) {
+        if (parts.length < 2) {
+            return RequestDecoder.buildErrorResponse("Usage: SMEMBERS key");
+        }
+        String members = storeEngine.smembers(parts[1]);
+        return members + Constants.LINE_SEPARATOR;
+    }
+
+    private String handleSrem(String[] parts) {
+        if (parts.length < 3) {
+            return RequestDecoder.buildErrorResponse("Usage: SREM key member");
+        }
+        String key = parts[1];
+        StringBuilder valueBuilder = new StringBuilder();
+        for (int i = 2; i < parts.length; i++) {
+            if (i > 2) valueBuilder.append(" ");
+            valueBuilder.append(parts[i]);
+        }
+        String command = "SREM " + key + " " + valueBuilder.toString();
+        
+        if (!checkAndReplicate(command)) {
+            return Constants.ERROR_PREFIX + "Failed to replicate to master" + Constants.LINE_SEPARATOR;
+        }
+        
+        String result = storeEngine.srem(key, valueBuilder.toString());
+        replicateToSlaves(command);
+        return result + Constants.LINE_SEPARATOR;
+    }
+
+    // ================ Hash handlers ================
+    
+    private String handleHset(String[] parts) {
+        if (parts.length < 4) {
+            return RequestDecoder.buildErrorResponse("Usage: HSET key field value");
+        }
+        String key = parts[1];
+        String field = parts[2];
+        StringBuilder valueBuilder = new StringBuilder();
+        for (int i = 3; i < parts.length; i++) {
+            if (i > 3) valueBuilder.append(" ");
+            valueBuilder.append(parts[i]);
+        }
+        String command = "HSET " + key + " " + field + " " + valueBuilder.toString();
+        
+        if (!checkAndReplicate(command)) {
+            return Constants.ERROR_PREFIX + "Failed to replicate to master" + Constants.LINE_SEPARATOR;
+        }
+        
+        String result = storeEngine.hset(key, field, valueBuilder.toString());
+        replicateToSlaves(command);
+        return result + Constants.LINE_SEPARATOR;
+    }
+
+    private String handleHget(String[] parts) {
+        if (parts.length < 3) {
+            return RequestDecoder.buildErrorResponse("Usage: HGET key field");
+        }
+        String value = storeEngine.hget(parts[1], parts[2]);
+        return RequestDecoder.buildResponse(value);
+    }
+
+    private String handleHdel(String[] parts) {
+        if (parts.length < 3) {
+            return RequestDecoder.buildErrorResponse("Usage: HDEL key field");
+        }
+        String key = parts[1];
+        String field = parts[2];
+        String command = "HDEL " + key + " " + field;
+        
+        if (!checkAndReplicate(command)) {
+            return Constants.ERROR_PREFIX + "Failed to replicate to master" + Constants.LINE_SEPARATOR;
+        }
+        
+        String result = storeEngine.hdel(key, field);
+        replicateToSlaves(command);
+        return result + Constants.LINE_SEPARATOR;
+    }
+
+    private String handleHgetall(String[] parts) {
+        if (parts.length < 2) {
+            return RequestDecoder.buildErrorResponse("Usage: HGETALL key");
+        }
+        String result = storeEngine.hgetall(parts[1]);
+        return result + Constants.LINE_SEPARATOR;
     }
 }

@@ -301,6 +301,86 @@ public class HeartbeatManager {
                         engine.dropCollection(parts[1]);
                     }
                     break;
+                case Constants.COMMAND_COLL_SET:
+                    if (parts.length >= 4) {
+                        StringBuilder collValueBuilder = new StringBuilder();
+                        for (int i = 3; i < parts.length; i++) {
+                            if (i > 3) collValueBuilder.append(" ");
+                            collValueBuilder.append(parts[i]);
+                        }
+                        engine.collectionSet(parts[1], parts[2], collValueBuilder.toString());
+                    }
+                    break;
+                case Constants.COMMAND_COLL_DEL:
+                    if (parts.length >= 3) {
+                        engine.collectionDel(parts[1], parts[2]);
+                    }
+                    break;
+                case Constants.COMMAND_LPUSH:
+                    if (parts.length >= 3) {
+                        StringBuilder lpushValue = new StringBuilder();
+                        for (int i = 2; i < parts.length; i++) {
+                            if (i > 2) lpushValue.append(" ");
+                            lpushValue.append(parts[i]);
+                        }
+                        engine.lpush(parts[1], lpushValue.toString());
+                    }
+                    break;
+                case Constants.COMMAND_RPUSH:
+                    if (parts.length >= 3) {
+                        StringBuilder rpushValue = new StringBuilder();
+                        for (int i = 2; i < parts.length; i++) {
+                            if (i > 2) rpushValue.append(" ");
+                            rpushValue.append(parts[i]);
+                        }
+                        engine.rpush(parts[1], rpushValue.toString());
+                    }
+                    break;
+                case Constants.COMMAND_LPOP:
+                    if (parts.length >= 2) {
+                        engine.lpop(parts[1]);
+                    }
+                    break;
+                case Constants.COMMAND_RPOP:
+                    if (parts.length >= 2) {
+                        engine.rpop(parts[1]);
+                    }
+                    break;
+                case Constants.COMMAND_SADD:
+                    if (parts.length >= 3) {
+                        StringBuilder saddValue = new StringBuilder();
+                        for (int i = 2; i < parts.length; i++) {
+                            if (i > 2) saddValue.append(" ");
+                            saddValue.append(parts[i]);
+                        }
+                        engine.sadd(parts[1], saddValue.toString());
+                    }
+                    break;
+                case Constants.COMMAND_SREM:
+                    if (parts.length >= 3) {
+                        StringBuilder sremValue = new StringBuilder();
+                        for (int i = 2; i < parts.length; i++) {
+                            if (i > 2) sremValue.append(" ");
+                            sremValue.append(parts[i]);
+                        }
+                        engine.srem(parts[1], sremValue.toString());
+                    }
+                    break;
+                case Constants.COMMAND_HSET:
+                    if (parts.length >= 4) {
+                        StringBuilder hsetValue = new StringBuilder();
+                        for (int i = 3; i < parts.length; i++) {
+                            if (i > 3) hsetValue.append(" ");
+                            hsetValue.append(parts[i]);
+                        }
+                        engine.hset(parts[1], parts[2], hsetValue.toString());
+                    }
+                    break;
+                case Constants.COMMAND_HDEL:
+                    if (parts.length >= 3) {
+                        engine.hdel(parts[1], parts[2]);
+                    }
+                    break;
             }
         } catch (Exception e) {
             System.err.println("[HeartbeatManager] Failed to execute command: " + e.getMessage());

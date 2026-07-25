@@ -9,6 +9,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
+import java.util.zip.GZIPInputStream;
 
 /**
  * SSTable - LSM-Tree 的有序字符串表
@@ -19,12 +20,37 @@ public class SSTable {
     private static final String SSTABLE_DIR = Constants.DATA_DIR + "/sstables";
     private static final String SSTABLE_SUFFIX = ".sst";
     private static final String INDEX_SUFFIX = ".idx";
+    private static final long MAX_FILE_SIZE = 64 * 1024 * 1024; // 64MB 文件大小限制
 
     private final int level;
     private final long fileIndex;
     private final File dataFile;
     private final File indexFile;
+    private final boolean compressed;
     private volatile long size = 0;
+    private volatile boolean closed = false;
+
+    /**
+     * 检查文件是否超过大小限制（Rotate条件）
+     */
+    public boolean exceedsSizeLimit() {
+        if (closed) return false;
+        return size >= MAX_FILE_SIZE;
+    }
+
+    /**
+     * 关闭文件（Rotate后不再写入）
+     */
+    public void closeFile() {
+        this.closed = true;
+    }
+
+    /**
+     * 是否已关闭（无法再写入）
+     */
+    public boolean isClosed() {
+        return closed;
+    }
 
     public SSTable(int level, long fileIndex) {
         this.level = level;
@@ -38,8 +64,25 @@ public class SSTable {
         }
         
         String basePath = SSTABLE_DIR + "/level-" + level + "/sst-" + fileIndex;
-        this.dataFile = new File(basePath + SSTABLE_SUFFIX);
+        File uncompressedFile = new File(basePath + SSTABLE_SUFFIX);
+        File compressedFile = new File(basePath + SSTABLE_SUFFIX + Constants.GZ_FILE_SUFFIX);
+        
+        // 检测是否已存在压缩文件
+        if (compressedFile.exists()) {
+            this.dataFile = compressedFile;
+            this.compressed = true;
+        } else {
+            this.dataFile = uncompressedFile;
+            this.compressed = false;
+        }
         this.indexFile = new File(basePath + INDEX_SUFFIX);
+    }
+
+    /**
+     * 检查是否为压缩格式
+     */
+    public boolean isCompressed() {
+        return compressed;
     }
 
     /**
@@ -98,6 +141,10 @@ public class SSTable {
      * 查找键值对
      */
     public String get(String key) {
+        if (compressed) {
+            return getFromCompressed(key);
+        }
+        
         // 先检查索引文件，定位大致位置
         Long offset = findOffsetInIndex(key);
         if (offset == null) {
@@ -106,6 +153,32 @@ public class SSTable {
 
         // 在数据文件中查找
         return searchInDataFile(key, offset);
+    }
+
+    /**
+     * 从压缩文件中查找（无法随机访问，需要完整解压扫描）
+     */
+    private String getFromCompressed(String key) {
+        if (!dataFile.exists()) {
+            return null;
+        }
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(new GZIPInputStream(new FileInputStream(dataFile)), Constants.ENCODING))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                line = line.trim();
+                if (line.isEmpty()) continue;
+                int spaceIdx = line.indexOf(' ');
+                if (spaceIdx > 0) {
+                    if (line.substring(0, spaceIdx).equals(key)) {
+                        return line.substring(spaceIdx + 1);
+                    }
+                }
+            }
+        } catch (IOException e) {
+            System.err.println("[SSTable] Failed to read compressed file: " + e.getMessage());
+        }
+        return null;
     }
 
     /**
@@ -250,8 +323,13 @@ public class SSTable {
 
         BufferedReader reader = null;
         try {
-            reader = new BufferedReader(
-                    new InputStreamReader(new FileInputStream(dataFile), Constants.ENCODING));
+            if (compressed) {
+                reader = new BufferedReader(
+                        new InputStreamReader(new GZIPInputStream(new FileInputStream(dataFile)), Constants.ENCODING));
+            } else {
+                reader = new BufferedReader(
+                        new InputStreamReader(new FileInputStream(dataFile), Constants.ENCODING));
+            }
 
             String line;
             while ((line = reader.readLine()) != null) {
@@ -270,11 +348,7 @@ public class SSTable {
             System.err.println("[SSTable] Failed to read all keys: " + e.getMessage());
         } finally {
             if (reader != null) {
-                try {
-                    reader.close();
-                } catch (IOException e) {
-                    // ignore
-                }
+                try { reader.close(); } catch (IOException e) { }
             }
         }
 
@@ -293,8 +367,13 @@ public class SSTable {
 
         BufferedReader reader = null;
         try {
-            reader = new BufferedReader(
-                    new InputStreamReader(new FileInputStream(dataFile), Constants.ENCODING));
+            if (compressed) {
+                reader = new BufferedReader(
+                        new InputStreamReader(new GZIPInputStream(new FileInputStream(dataFile)), Constants.ENCODING));
+            } else {
+                reader = new BufferedReader(
+                        new InputStreamReader(new FileInputStream(dataFile), Constants.ENCODING));
+            }
 
             String line;
             while ((line = reader.readLine()) != null) {
@@ -315,11 +394,7 @@ public class SSTable {
             System.err.println("[SSTable] Failed to read all entries: " + e.getMessage());
         } finally {
             if (reader != null) {
-                try {
-                    reader.close();
-                } catch (IOException e) {
-                    // ignore
-                }
+                try { reader.close(); } catch (IOException e) { }
             }
         }
 

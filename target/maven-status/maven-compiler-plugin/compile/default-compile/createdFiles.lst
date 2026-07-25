@@ -2,6 +2,7 @@ com\easydb\server\engine\disk\WalManager.class
 com\easydb\client\gui\GuiClient.class
 com\easydb\common\utils\ByteUtils.class
 com\easydb\common\constants\Constants.class
+com\easydb\server\engine\mem\LruCache$1.class
 com\easydb\server\http\RestDispatcher.class
 com\easydb\common\utils\Serializer.class
 com\easydb\server\http\handler\KeyHandler.class
@@ -19,6 +20,7 @@ com\easydb\server\engine\StoreEngine.class
 com\easydb\client\sdk\DatabaseClient.class
 com\easydb\server\cluster\NodeRole.class
 com\easydb\server\http\handler\BatchHandler.class
+com\easydb\server\engine\mem\LruCache.class
 com\easydb\server\net\RequestDecoder.class
 com\easydb\server\engine\disk\Compactor.class
 com\easydb\server\engine\index\Trie$1.class
@@ -32,9 +34,7 @@ com\easydb\server\http\handler\KeysListHandler.class
 com\easydb\server\engine\lsm\MemTable.class
 com\easydb\Launcher.class
 com\easydb\server\net\ClientHandler.class
-com\easydb\server\engine\disk\DataFileManager.class
 com\easydb\server\engine\index\Trie.class
-com\easydb\server\engine\disk\DataFileManager$WriteResult.class
 com\easydb\server\engine\index\SparseIndex$IndexEntry.class
 com\easydb\server\http\HttpResponse.class
 com\easydb\server\engine\lsm\LSMTree.class

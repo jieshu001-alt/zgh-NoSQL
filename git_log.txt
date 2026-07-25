@@ -69,24 +69,30 @@ Issue 1: rotate之后的文件压缩理解有误 (Fix: Rotate Compression)
     * Rewrote submitCompaction() to do true merge-compression:
       read all data files -> deduplicate (keep latest version) -> sort by key -> write to .gz
     * Compressed files stay in data directory, readable by DataFileManager
-  - src/main/java/com/easydb/server/engine/disk/DataFileManager.java
-    * Added readByIndex() for offset-based key lookup via sparse index
-    * Modified scanByKey() to support reading .gz compressed files
-    * Added WriteResult inner class and write() method for proper offset recording
-    * Added setCompactor() to link compactor with file manager
-    * Enhanced file rotation with periodic compaction triggers
+  - src/main/java/com/easydb/server/engine/disk/DataFileManager.java [DELETED]
+    * This class was dead code - never instantiated by DefaultStoreEngine
+    * Removed entirely; LSM-Tree SSTables handle their own data management
+  - src/main/java/com/easydb/server/engine/lsm/SSTable.java
+    * Added compressed file support: auto-detects .gz files, getFromCompressed() method
+    * getAllKeys() / getAllEntries() handle both compressed and uncompressed formats
+  - src/main/java/com/easydb/server/engine/lsm/LSMTree.java
+    * Integrated Compactor: compressSSTable() compresses L2 cold data via GZIPOutputStream
+    * mergeLevel() auto-compresses SSTables merged to L2+ (hot tiers L0/L1 stay uncompressed)
+    * close() calls compactor.shutdown() to clean up
 
 Issue 2: 没有实现索引功能 (Fix: Index Implementation)
-  - src/main/java/com/easydb/server/engine/index/SparseIndex.java [NEW]
+  - src/main/java/com/easydb/server/engine/index/SparseIndex.java
     * Implements key -> (fileIndex, offset, length) sparse index mapping
     * Persistent storage to index.dat, auto-loaded on restart
     * Thread-safe with ReadWriteLock
-    * IndexEntry class with getFileIndex(), getOffset(), getLength(), getValueLength()
+  - src/main/java/com/easydb/server/engine/lsm/LSMTree.java
+    * SparseIndex integrated as global index: maps key -> (level, sstableIndex)
+    * updateGlobalIndex() updates index on flushMemTable() and mergeLevel()
+    * get() checks global index first for direct SSTable lookup, falls back to full scan
+    * close() persists global index via globalIndex.persist()
   - src/main/java/com/easydb/server/engine/index/Trie.java
-    * Refactored TrieNode to use ConcurrentHashMap for thread-safe children
-    * Added ReadWriteLock for insert/delete/search operations
+    * Added ReadWriteLock for thread-safe insert/delete/search operations
     * Fixed wildcard pattern matching (*xxx*, xxx*, *xxx, x*x)
-    * Added collectAllKeys() helper for full traversal
 
 Issue 3: LSMT没实现 (Fix: LSM-Tree Implementation)
   - src/main/java/com/easydb/server/engine/lsm/MemTable.java [NEW]
@@ -94,26 +100,17 @@ Issue 3: LSMT没实现 (Fix: LSM-Tree Implementation)
     * Supports immutable state for safe flush-to-disk
     * Size tracking with max threshold (64MB default)
     * Proper tombstone support (null value for deleted keys)
-    * contains() correctly excludes tombstone entries
   - src/main/java/com/easydb/server/engine/lsm/SSTable.java [NEW]
-    * Sorted String Table stored as uncompressed text (supports RandomAccessFile seek)
-    * Separate .sst (data) and .idx (sparse index) files per table
-    * Sparse index: every 100th entry, stores key + byte offset
+    * Sorted String Table: .sst (data) + .idx (sparse index) per table
     * get() uses binary-search on index -> RandomAccessFile seek -> sequential scan
-    * getAllEntries() for merge operations, getAllKeys() for prefix queries
-    * Supports deletion of SSTable files on compaction
+    * Compressed file support for cold tiers (.sst.gz detection + GZIPInputStream reading)
   - src/main/java/com/easydb/server/engine/lsm/LSMTree.java [NEW]
     * 3-level storage: MemTable -> Level 0 -> Level 1 -> Level 2
-    * Auto-flush MemTable to Level 0 SSTable when size exceeds threshold
-    * Background merge daemon checks every 30 seconds
-    * Level 0 merge: all L0 + all L1 SSTables -> deduplicated -> new L1 SSTable
-    * Tombstone cleanup during merge (entries with null values removed)
-    * Reads search in order: active MemTable -> immutable MemTables -> L0 -> L1 -> L2
-    * Loads existing SSTables on startup from disk
+    * Auto-flush, background merge (30s interval), tombstone cleanup
+    * Reads: active MemTable -> immutable MemTables -> global index -> L0 -> L1 -> L2
   - src/main/java/com/easydb/server/engine/DefaultStoreEngine.java
     * Replaced ConcurrentHashStore with LSMTree as primary storage
-    * Removed unused SparseIndex integration (LSM-Tree SSTables handle their own indexing)
-    * Simplified get() to use LSM-Tree only (no disk fallback scan)
+    * Added LruCache (10000 entries) for read-through caching
     * Integrated WAL replay for all commands (SET/DEL/MSET/MDEL/CREATE/DROP)
 
 Issue 4: 集群没实现 (Fix: Cluster Implementation)
@@ -122,38 +119,54 @@ Issue 4: 集群没实现 (Fix: Cluster Implementation)
     * Added incrementTerm(), resetVote(), getCurrentTerm(), setCurrentTerm()
     * Changed nodes list to CopyOnWriteArrayList for thread safety
   - src/main/java/com/easydb/server/cluster/RoleElector.java
-    * Rewrote with proper Raft-like term-based election:
-      - Random election timeout (3-6 seconds) to prevent split votes
-      - incrementTerm() on election start, vote for self
-      - RequestVotes with term comparison (ELECT <candidateId> <term>)
-      - Majority calculation: (aliveNodeCount + 1) / 2
-      - Master announcement broadcast on win (ACK <masterId> MASTER <term>)
-      - Vote granting rules: higher term resets vote, same term can re-vote
-      - handleVoteRequest() and handleMasterAnnouncement() for incoming messages
+    * Raft-like term-based election with random timeout (3-6s), majority voting
+    * Master announcement broadcast on win (ACK <masterId> MASTER <term>)
     * Thread-safe with electionInProgress flag
   - src/main/java/com/easydb/server/cluster/HeartbeatManager.java
     * Integrated term-based election (ELECT/VOTE/ACK protocols with term numbers)
-    * Added SNAPSHOT protocol for full data sync:
-      - SNAPSHOT_START <count> -> key-value pairs -> SNAPSHOT_END
-      - syncFromMaster() requests full snapshot on join
-    * Extended command execution for replication: SET/DEL/MSET/MDEL/CREATE/DROP
-    * Heartbeat messages include term number: HEARTBEAT <nodeId> <role> <term>
-    * Master monitor checks master liveness and triggers election
-    * Updated JOIN response to include master term number
+    * Added SNAPSHOT protocol for full data sync (SNAPSHOT_START/END)
+    * Extended command execution for collection commands (C_SET, C_DEL)
+    * Heartbeat messages include term number
   - src/main/java/com/easydb/server/cluster/ReplicationManager.java
     * replicateCommand() forwards to all slaves via thread pool
-    * Real-time replication: master write -> callback -> ReplicationManager -> slave nodes
+    * Real-time replication via callback chain
   - src/main/java/com/easydb/server/bootstrap/ServerBootstrap.java
-    * Wire replication callback: DefaultStoreEngine.setReplicationCallback() ->
-      ReplicationManager.replicateCommand()
-    * Master auto-replicates every SET/DEL/MSET/MDEL/CREATE/DROP to slaves
+    * Wire replication callback: DefaultStoreEngine -> ReplicationManager
+    * Read load balancing: slaves serve reads locally (GET/KEYS/EXISTS no forwarding)
+
+Additional Feature Additions:
+  - src/main/java/com/easydb/server/engine/mem/LruCache.java [NEW]
+    * LRU read-through cache using LinkedHashMap access-order mode
+    * 10000 entry max, automatic eldest eviction
+    * Integrated in DefaultStoreEngine: get() checks cache first, set() updates, del() removes
+    * batchSet() / batchDel() maintain cache consistency
+
+  - src/main/java/com/easydb/server/engine/StoreEngine.java
+    * Added collection-level read/write operations:
+      collectionSet(collection, key, value)
+      collectionGet(collection, key)
+      collectionDel(collection, key)
+      collectionKeys(collection)
+    * Internally uses "collection:key" prefix format
+
+  - src/main/java/com/easydb/server/engine/DefaultStoreEngine.java
+    * Implemented collectionSet/get/del/keys with collection existence validation
+    * Integrated LRU read cache in get/set/del/batchSet/batchDel
+
+  - src/main/java/com/easydb/common/constants/Constants.java
+    * Added new command constants: C_SET, C_GET, C_DEL, C_KEYS
+
+  - src/main/java/com/easydb/server/net/ClientHandler.java
+    * Added 4 new collection command handlers: C_SET, C_GET, C_DEL, C_KEYS
+    * All support cluster replication (checkAndReplicate + replicateToSlaves)
+
+  - src/main/java/com/easydb/server/cluster/HeartbeatManager.java
+    * Added C_SET/C_DEL execution for cluster replication
 
 Additional Bug Fixes:
   - src/main/java/com/easydb/server/engine/disk/WalManager.java
-    * Rewrote replay() to handle ALL command formats:
-      SET key value, DEL key, MSET k1 v1 k2 v2 ..., MDEL k1 k2 ..., CREATE name, DROP name
-    * batchWrite() writes full MSET/MDEL commands matching replay format
-    * Added batchWriteDel() for MDEL commands
+    * Rewrote replay() to handle ALL command formats: SET/DEL/MSET/MDEL/CREATE/DROP
+    * batchWrite() and batchWriteDel() match replay format
   - src/main/java/com/easydb/client/gui/GuiClient.java
     * Fixed variable name conflict: renamed "value" to "valueBuilder" in executeCommand()
   - src/main/java/com/easydb/client/shell/ShellClient.java
@@ -164,30 +177,46 @@ Additional Bug Fixes:
 Modified Files Summary:
   M  src/main/java/com/easydb/client/gui/GuiClient.java
   M  src/main/java/com/easydb/client/shell/ShellClient.java
+  M  src/main/java/com/easydb/common/constants/Constants.java
   M  src/main/java/com/easydb/server/bootstrap/ServerBootstrap.java
   M  src/main/java/com/easydb/server/cluster/ClusterConfig.java
   M  src/main/java/com/easydb/server/cluster/HeartbeatManager.java
   M  src/main/java/com/easydb/server/cluster/RoleElector.java
   M  src/main/java/com/easydb/server/engine/DefaultStoreEngine.java
+  M  src/main/java/com/easydb/server/engine/StoreEngine.java
   M  src/main/java/com/easydb/server/engine/disk/Compactor.java
-  M  src/main/java/com/easydb/server/engine/disk/DataFileManager.java
   M  src/main/java/com/easydb/server/engine/disk/WalManager.java
   M  src/main/java/com/easydb/server/engine/index/Trie.java
+  M  src/main/java/com/easydb/server/engine/lsm/LSMTree.java
+  M  src/main/java/com/easydb/server/engine/lsm/SSTable.java
   M  src/main/java/com/easydb/server/http/handler/BatchHandler.java
+  M  src/main/java/com/easydb/server/net/ClientHandler.java
+
+Deleted Files:
+  D  src/main/java/com/easydb/server/engine/disk/DataFileManager.java
+     (dead code - never instantiated by DefaultStoreEngine, replaced by LSM-Tree)
 
 New Files:
   ?? src/main/java/com/easydb/server/engine/index/SparseIndex.java
   ?? src/main/java/com/easydb/server/engine/lsm/MemTable.java
   ?? src/main/java/com/easydb/server/engine/lsm/SSTable.java
   ?? src/main/java/com/easydb/server/engine/lsm/LSMTree.java
+  ?? src/main/java/com/easydb/server/engine/mem/LruCache.java
+
+Compile Status: BUILD SUCCESS - mvn clean compile, 36 source files, 0 errors
 
 Architecture Decision Notes:
-  - SparseIndex removed from DefaultStoreEngine because LSM-Tree SSTables each
-    have their own .idx sparse index files, making a separate global index redundant
-  - SSTable data stored uncompressed (text format) to support RandomAccessFile seek
-    for efficient offset-based lookups; compression can be added at the SSTable level
-    as a future optimization
-  - LSM-Tree tombstone uses null value (not empty string) to distinguish "deleted"
-    from "empty value", and contains() checks value != null
-  - Replication uses push model: master writes locally then forwards to slaves;
-    slave writes are applied locally without further replication to prevent loops
+  - DataFileManager deleted as dead code; LSM-Tree SSTables handle data file management
+  - Compactor integrated into LSMTree.mergeLevel() for L2 cold data GZIP compression
+  - L0/L1 SSTables stay uncompressed for fast random access via sparse index
+  - SparseIndex serves as global key->SSTable lookup for O(1) get() when cache warm
+  - LRU cache (10000 entries) provides read-through caching above LSM-Tree
+  - Collection commands (C_SET/C_GET/C_DEL/C_KEYS) use "collection:key" prefix internally
+  - SSTable tombstone uses null value (not empty string) for deleted key marking
+  - Replication uses push model: master writes locally then forwards to slaves
+  - Read load balancing: slaves serve GET/KEYS/EXISTS locally without master forwarding
+  - Rotate based on SSTable file size (64MB): checkRotateAndCompress() runs every 10s,
+    closes file -> creates new file -> submits old file to Compactor for async compression
+  - Complex data types (List/Set/Map) stored as JSON: LPUSH/RPUSH/LPOP/RPOP/LLEN for List,
+    SADD/SMEMBERS/SREM for Set, HSET/HGET/HDEL/HGETALL for Hash
+  - All List/Set/Hash commands support cluster replication via ReplicateCallback
