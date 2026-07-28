@@ -13,6 +13,12 @@ public class MemTable {
 
     private static final long DEFAULT_MEMTABLE_MAX_SIZE = 64 * 1024 * 1024; // 64MB
 
+    /**
+     * 墓碑标记常量 - ConcurrentSkipListMap 不允许 null 值，
+     * 使用此特殊字符串作为删除标记
+     */
+    public static final String TOMBSTONE = "\u0001__TOMBSTONE__\u0001";
+
     private final ConcurrentSkipListMap<String, String> data;
     private final long maxSize;
     private volatile long size = 0;
@@ -51,7 +57,11 @@ public class MemTable {
      * 获取值（返回null表示键不存在或已删除）
      */
     public String get(String key) {
-        return data.get(key);
+        String value = data.get(key);
+        if (value == null || value.equals(TOMBSTONE)) {
+            return null;
+        }
+        return value;
     }
 
     /**
@@ -61,8 +71,8 @@ public class MemTable {
         if (immutable) {
             throw new IllegalStateException("MemTable is immutable");
         }
-        // 使用null作为墓碑标记
-        put(key, null);
+        // 使用 TOMBSTONE 作为墓碑标记（ConcurrentSkipListMap 不允许 null 值）
+        put(key, TOMBSTONE);
     }
 
     /**
@@ -70,7 +80,7 @@ public class MemTable {
      */
     public boolean contains(String key) {
         String value = data.get(key);
-        return value != null;
+        return value != null && !value.equals(TOMBSTONE);
     }
 
     /**
@@ -79,7 +89,7 @@ public class MemTable {
     public List<String> getKeys() {
         List<String> keys = new ArrayList<>();
         for (Map.Entry<String, String> entry : data.entrySet()) {
-            if (entry.getValue() != null) {
+            if (entry.getValue() != null && !entry.getValue().equals(TOMBSTONE)) {
                 keys.add(entry.getKey());
             }
         }

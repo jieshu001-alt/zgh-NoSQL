@@ -130,6 +130,7 @@ public class LSMTree {
 
     /**
      * 获取值（优先使用全局索引加速定位）
+     * 注意：MemTable 中的 TOMBSTONE 表示已删除，应直接返回 null
      */
     public String get(String key) {
         lock.readLock().lock();
@@ -139,12 +140,19 @@ public class LSMTree {
             if (value != null) {
                 return value;
             }
+            // 如果 MemTable 中有 TOMBSTONE（get返回null但key存在），说明已删除
+            if (activeMemTable.contains(key)) {
+                return null; // 已被删除
+            }
             
             // 再查不可变 MemTable
             for (MemTable memTable : immutableMemTables) {
                 value = memTable.get(key);
                 if (value != null) {
                     return value;
+                }
+                if (memTable.contains(key)) {
+                    return null; // 已被删除
                 }
             }
             
@@ -181,10 +189,15 @@ public class LSMTree {
     }
 
     /**
-     * 删除键（使用 null 作为墓碑标记）
+     * 删除键（使用 TOMBSTONE 作为墓碑标记）
      */
     public void delete(String key) {
-        put(key, null);
+        lock.readLock().lock();
+        try {
+            activeMemTable.delete(key);
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     /**
@@ -449,8 +462,8 @@ public class LSMTree {
                 nextLevel.clear();
             }
             
-            // 删除已删除的条目（值为 null，即墓碑标记）
-            mergedEntries.entrySet().removeIf(e -> e.getValue() == null);
+            // 删除已删除的条目（值为 TOMBSTONE 即墓碑标记）
+            mergedEntries.entrySet().removeIf(e -> e.getValue() == null || e.getValue().equals(MemTable.TOMBSTONE));
             
             // 创建新的 MemTable 用于写入
             MemTable tempMemTable = new MemTable(Long.MAX_VALUE);

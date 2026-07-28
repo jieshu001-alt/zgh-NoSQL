@@ -94,10 +94,10 @@ public class SSTable {
             return;
         }
 
-        // 过滤掉墓碑标记（null值）
+        // 过滤掉墓碑标记（TOMBSTONE 值）
         List<Map.Entry<String, String>> validEntries = new ArrayList<>();
         for (Map.Entry<String, String> entry : entries) {
-            if (entry.getValue() != null) {
+            if (entry.getValue() != null && !entry.getValue().equals(MemTable.TOMBSTONE)) {
                 validEntries.add(entry);
             }
         }
