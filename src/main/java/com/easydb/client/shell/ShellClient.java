@@ -123,6 +123,27 @@ public class ShellClient {
                     client.mdel(mdelKeys);
                     System.out.println("OK");
                     break;
+                case "CREATE":
+                    if (args.length < 2) {
+                        System.err.println("Usage: CREATE collection");
+                        System.exit(1);
+                    }
+                    client.createCollection(args[1]);
+                    System.out.println("OK");
+                    break;
+                case "DROP":
+                    if (args.length < 2) {
+                        System.err.println("Usage: DROP collection");
+                        System.exit(1);
+                    }
+                    System.out.println(client.dropCollection(args[1]));
+                    break;
+                case "COLLECTIONS":
+                    List<String> collections = client.listCollections();
+                    for (String coll : collections) {
+                        System.out.println(coll);
+                    }
+                    break;
                 default:
                     System.err.println("Unknown command: " + command);
                     System.exit(1);

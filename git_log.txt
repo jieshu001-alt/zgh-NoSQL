@@ -1,222 +1,166 @@
 Easy-DB Distributed NoSQL Database System - Git Commit Log
 ======================================================================
+Branch: master  |  Remote: zgh-NoSQL/master  |  Status: clean
+
+--------------------------------------------------------------------------------
 
 Commit 1: 1c70d219b3064807fe215ca4fd8b8d0bf813b324
 Author: 3221153 <2183459233@qq.com>
 Date: 2026-07-14 16:02:54
 Message: zbh代码
 
-Files (32):
-  - pom.xml (Maven project config with fastjson, assembly plugin)
-  - src/main/java/com/easydb/Launcher.java (main entry, --server/--cli/--gui/--shell)
-  - src/main/java/com/easydb/common/constants/Constants.java
-  - src/main/java/com/easydb/common/utils/ByteUtils.java
-  - src/main/java/com/easydb/client/sdk/DatabaseClient.java (TCP client SDK)
-  - src/main/java/com/easydb/client/gui/GuiClient.java (Swing GUI)
-  - src/main/java/com/easydb/client/shell/ShellClient.java (single command client)
-  - src/main/java/com/easydb/server/net/SocketServer.java (multi-threaded TCP server)
-  - src/main/java/com/easydb/server/net/ClientHandler.java (per-client handler)
-  - src/main/java/com/easydb/server/net/RequestDecoder.java (protocol parser)
-  - src/main/java/com/easydb/server/http/HttpServer.java (HTTP REST server)
-  - src/main/java/com/easydb/server/http/HttpRequest.java
-  - src/main/java/com/easydb/server/http/HttpResponse.java
-  - src/main/java/com/easydb/server/http/RestDispatcher.java
-  - src/main/java/com/easydb/server/http/handler/KeyHandler.java
-  - src/main/java/com/easydb/server/http/handler/KeysListHandler.java
-  - src/main/java/com/easydb/server/http/handler/BatchHandler.java
-  - src/main/java/com/easydb/server/bootstrap/ServerBootstrap.java
-  - src/main/java/com/easydb/server/engine/mem/ConcurrentHashStore.java (in-memory store)
-  - src/main/java/com/easydb/server/engine/disk/WalManager.java (WAL logging)
-  - src/main/java/com/easydb/server/engine/disk/DataFileManager.java (file rotation)
-  - src/main/java/com/easydb/server/engine/index/Trie.java (prefix tree index)
-  - src/main/java/com/easydb/server/cluster/ClusterConfig.java
-  - src/main/java/com/easydb/server/cluster/Node.java
-  - src/main/java/com/easydb/server/cluster/NodeRole.java
-  - src/main/java/com/easydb/server/cluster/HeartbeatManager.java
-  - src/main/java/com/easydb/server/cluster/RoleElector.java
-  - src/main/java/com/easydb/server/cluster/ReplicationManager.java
+Files (32新增):
+  - pom.xml, .idea/ 配置文件
+  - src/.../Launcher.java                  启动入口 (--server/--cli/--gui/--shell)
+  - src/.../client/gui/GuiClient.java      Swing GUI (504行)
+  - src/.../client/sdk/DatabaseClient.java  TCP SDK
+  - src/.../client/shell/ShellClient.java   单命令客户端
+  - src/.../common/constants/Constants.java 常量定义
+  - src/.../common/utils/ByteUtils.java     字节工具
+  - src/.../server/net/SocketServer.java    多线程TCP服务器
+  - src/.../server/net/ClientHandler.java   客户端处理器(325行)
+  - src/.../server/net/RequestDecoder.java  协议解析
+  - src/.../server/http/HttpServer.java     HTTP服务器
+  - src/.../server/http/HttpRequest/Response/RestDispatcher.java
+  - src/.../server/http/handler/KeyHandler/KeysListHandler/BatchHandler.java
+  - src/.../server/bootstrap/ServerBootstrap.java (159行)
+  - src/.../server/engine/mem/ConcurrentHashStore.java 内存存储
+  - src/.../server/engine/disk/WalManager.java         WAL日志(130行)
+  - src/.../server/engine/disk/DataFileManager.java    文件轮转(134行)
+  - src/.../server/engine/index/Trie.java              前缀树索引(201行)
+  - src/.../server/cluster/ClusterConfig.java (81行)
+  - src/.../server/cluster/Node/NodeRole.java
+  - src/.../server/cluster/HeartbeatManager.java (351行)
+  - src/.../server/cluster/RoleElector.java (121行)
+  - src/.../server/cluster/ReplicationManager.java (82行)
 
-Summary: Initial complete project skeleton. C/S architecture with multi-threaded TCP server,
-HTTP REST API, Swing GUI client, interactive CLI, single-command shell client.
-Cluster support (heartbeat, election, replication) framework in place but not fully functional.
-Storage uses simple ConcurrentHashMap + append-only file rotation. Trie index in-memory only.
+Summary: 郑博浩，初始项目骨架。C/S多线程架构，HTTP REST API，Swing GUI客户端，
+交互式CLI，单命令Shell客户端。集群框架(心跳、选举、复制)已搭建但未完善。
+存储使用ConcurrentHashMap + 追加式文件轮转。Trie索引仅内存无持久化。
 
+--------------------------------------------------------------------------------
 
-Commit 2: e7bbdf9e2e5b023d6158e734666f6f3d466463ef
+Commit 2: df7eadc89ba7021cdff15bb9964bac76d58734c7
 Author: JieShu <jieshu001@gmail.com>
 Date: 2026-07-23 16:30:15
-Message: 郑根豪代码
+Message: 郑根壕代码
 
-New/Modified Files:
-  - src/main/java/com/easydb/common/utils/Serializer.java (object serialization)
-  - src/main/java/com/easydb/server/engine/StoreEngine.java (store interface: SET/GET/DEL/KEYS/EXISTS/batch ops/collections)
-  - src/main/java/com/easydb/server/engine/DefaultStoreEngine.java (unified storage engine with WAL + disk + index + LSM-Tree)
-  - src/main/java/com/easydb/server/engine/disk/Compactor.java (file merge/compaction)
-  - Various data files (easy-db-*.data, easy-db.wal)
+Files (59 changed, 681 insertions):
+  + src/.../common/utils/Serializer.java           对象序列化
+  + src/.../server/engine/StoreEngine.java          存储引擎接口(35行)
+  + src/.../server/engine/DefaultStoreEngine.java   统一存储引擎(271行)
+  + src/.../server/engine/disk/Compactor.java       文件压缩合并(64行)
+  + git_log.txt, shell-client.sh
+  + data/*.data, data/easy-db.wal                   测试数据文件
+  + target/ 目录(编译产物+JAR)
+  + .idea/ IDE配置文件
 
-Summary: Refactored storage layer with StoreEngine interface. Added WAL-based persistence,
-file rotation with compaction, and LSM-Tree storage engine foundation.
-Provided through StoreEngine: basic CRUD, batch operations (MSET/MGET/MDEL), collections (CREATE/DROP/LIST).
+Summary: 郑根壕，新增StoreEngine接口和DefaultStoreEngine统一存储引擎，
+整合WAL持久化、Compactor压缩合并。项目首次可打包运行。
 
+--------------------------------------------------------------------------------
 
-[Uncommitted] Current Working Changes (Teacher Feedback Fixes)
+Commit 3: 907d17b689d91c2dba9d7438ac2b3dc0478910d6
+Author: JieShu <jieshu001@gmail.com>
+Date: 2026-07-23 17:16:04
+Message: 郑根壕代码
+
+Files (74 changed, 2356 insertions, 377 deletions):
+  + src/.../server/engine/index/SparseIndex.java    全局稀疏索引(267行)
+  + src/.../server/engine/lsm/LSMTree.java          LSM-Tree核心(426行)
+  + src/.../server/engine/lsm/MemTable.java          内存有序表(146行)
+  + src/.../server/engine/lsm/SSTable.java           有序字符串表(328行)
+  + ReplicationCallback内部类
+  M src/.../server/engine/disk/DataFileManager.java  扩展readByIndex(+305行)
+  M src/.../server/engine/disk/Compactor.java        重写去重合并(+95行)
+  M src/.../server/engine/disk/WalManager.java       扩展replay(+79行)
+  M src/.../server/engine/index/Trie.java            读写锁(+204行)
+  M src/.../server/engine/DefaultStoreEngine.java    接入LSMTree+SparseIndex
+  M src/.../server/cluster/ClusterConfig.java        任期字段(+41行)
+  M src/.../server/cluster/HeartbeatManager.java     SNAPSHOT协议(+139行)
+  M src/.../server/cluster/RoleElector.java          任期选举(+118行)
+  M src/.../server/bootstrap/ServerBootstrap.java    集群复制回调(+7行)
+  M src/.../client/gui/GuiClient.java                编译修复(+8行)
+  M src/.../client/shell/ShellClient.java            编译修复(+8行)
+  M src/.../server/http/handler/BatchHandler.java    类型转换修复(+7行)
+  M git_log.txt                                      更新日志(+248行)
+
+Summary: 郑根壕，基于老师答辩反馈的全面重构：
+① LSM-Tree完整实现(MemTable+SSTable+3级分层+后台合并)
+② SparseIndex全局稀疏索引(持久化+加载)
+③ Compactor重写(去重→排序→GZIP压缩)
+④ 集群完善(任期选举+随机超时+多数派投票+SNAPSHOT全量同步)
+⑤ WAL完整回放(6种命令)
+⑥ Trie线程安全+编译错误修复
+⑦ 数据文件(data/*.data, data/sstables/)
+
+--------------------------------------------------------------------------------
+
+Commit 4: 84680b9be38cd9889252ae5bcc310d8764e656e2
+Author: JieShu <jieshu001@gmail.com>
+Date: 2026-07-23 17:24:23
+Message: 合并远程历史，保留本地文件删除修改
+
+Files (2 changed, 0 insertions, 0 deletions):
+  M target/.../DefaultStoreEngine.class
+  M target/.../Compactor.class
+
+Summary: 郑根壕，合并远程分支历史，保留本地文件删除修改。
+
+--------------------------------------------------------------------------------
+
+Commit 5: 2e809cf61e844a75427b55680cf08ba6ec0f1fb5
+Author: JieShu <jieshu001@gmail.com>
+Date: 2026-07-25 14:00:19
+Message: 郑根壕代码
+
+Files (27 changed, 1031 insertions, 467 deletions):
+  + src/.../server/engine/mem/LruCache.java          LRU读缓存(48行)
+  - src/.../server/engine/disk/DataFileManager.java  删除死代码(-387行)
+  M src/.../common/constants/Constants.java          复杂类型+集合命令(+22行)
+  M src/.../server/engine/StoreEngine.java           集合级接口(+36行)
+  M src/.../server/engine/DefaultStoreEngine.java    集合+缓存+复杂类型(+239行)
+  M src/.../server/engine/lsm/LSMTree.java           Rotate+压缩接入(+165行)
+  M src/.../server/engine/lsm/SSTable.java           压缩读写支持(+105行)
+  M src/.../server/cluster/HeartbeatManager.java     集合复制(+80行)
+  M src/.../server/net/ClientHandler.java            集合+复杂类型(+265行)
+  M git_log.txt                                      更新日志(+145行)
+
+Summary: 郑根壕，进阶功能完善：
+① LruCache读缓存(LinkedHashMap access-order, 10000条)
+② Collection集合级操作(C_SET/C_GET/C_DEL/C_KEYS)
+③ 复杂数据类型(List:LPUSH/RPOP, Set:SADD/SMEMBERS, Hash:HSET/HGETALL)
+④ Rotate检查线程(每10秒) + Compactor接入LSMTree
+⑤ DataFileManager死代码删除
+⑥ SSTable压缩文件透明读写(.sst.gz自动检测+GZIPInputStream)
+⑦ 集群复制扩展(支持C_SET/C_DEL/list/set/hash命令)
+⑧ BUILD SUCCESS - 36源文件，0错误
+
+--------------------------------------------------------------------------------
+
+Commit 6: d152dff75547a6d5d9d04e2ada1a250cae932236
+Author: JieShu <jieshu001@gmail.com>
+Date: 2026-07-28 14:06:52
+Message: 郑根壕代码
+
+Files (11 changed, 13347 insertions, 13 deletions):
+  + README.md                                       工程重建说明(212行)
+  M src/.../server/engine/lsm/LSMTree.java          优化(+21行)
+  M src/.../server/engine/lsm/MemTable.java          优化(+20行)
+  M src/.../server/engine/lsm/SSTable.java           优化(+4行)
+  M data/easy-db.wal                                 测试数据(+13102行)
+  D data/sstables/level-0/sst-0.sst                  清理测试数据
+  M data/sstables/level-0/sst-0.idx                  清理
+  M target/.../*.class + JAR                         编译更新
+
+Summary: 郑根壕，最终完善：
+① README.md(JDK8+Maven+fastjson+端口+导入+打包+运行+常见问题)
+② LSM-Tree/SSTable/MemTable小优化
+③ 测试数据更新
+④ BUILD SUCCESS - 36源文件，0错误，最终交付版本
+
 ======================================================================
-Date: 2026-07-23
-Based on: Teacher defense feedback - 4 major issues identified
-
-Issue 1: rotate之后的文件压缩理解有误 (Fix: Rotate Compression)
-  - src/main/java/com/easydb/server/engine/disk/Compactor.java
-    * Rewrote submitCompaction() to do true merge-compression:
-      read all data files -> deduplicate (keep latest version) -> sort by key -> write to .gz
-    * Compressed files stay in data directory, readable by DataFileManager
-  - src/main/java/com/easydb/server/engine/disk/DataFileManager.java [DELETED]
-    * This class was dead code - never instantiated by DefaultStoreEngine
-    * Removed entirely; LSM-Tree SSTables handle their own data management
-  - src/main/java/com/easydb/server/engine/lsm/SSTable.java
-    * Added compressed file support: auto-detects .gz files, getFromCompressed() method
-    * getAllKeys() / getAllEntries() handle both compressed and uncompressed formats
-  - src/main/java/com/easydb/server/engine/lsm/LSMTree.java
-    * Integrated Compactor: compressSSTable() compresses L2 cold data via GZIPOutputStream
-    * mergeLevel() auto-compresses SSTables merged to L2+ (hot tiers L0/L1 stay uncompressed)
-    * close() calls compactor.shutdown() to clean up
-
-Issue 2: 没有实现索引功能 (Fix: Index Implementation)
-  - src/main/java/com/easydb/server/engine/index/SparseIndex.java
-    * Implements key -> (fileIndex, offset, length) sparse index mapping
-    * Persistent storage to index.dat, auto-loaded on restart
-    * Thread-safe with ReadWriteLock
-  - src/main/java/com/easydb/server/engine/lsm/LSMTree.java
-    * SparseIndex integrated as global index: maps key -> (level, sstableIndex)
-    * updateGlobalIndex() updates index on flushMemTable() and mergeLevel()
-    * get() checks global index first for direct SSTable lookup, falls back to full scan
-    * close() persists global index via globalIndex.persist()
-  - src/main/java/com/easydb/server/engine/index/Trie.java
-    * Added ReadWriteLock for thread-safe insert/delete/search operations
-    * Fixed wildcard pattern matching (*xxx*, xxx*, *xxx, x*x)
-
-Issue 3: LSMT没实现 (Fix: LSM-Tree Implementation)
-  - src/main/java/com/easydb/server/engine/lsm/MemTable.java [NEW]
-    * In-memory ordered table using ConcurrentSkipListMap
-    * Supports immutable state for safe flush-to-disk
-    * Size tracking with max threshold (64MB default)
-    * Proper tombstone support (null value for deleted keys)
-  - src/main/java/com/easydb/server/engine/lsm/SSTable.java [NEW]
-    * Sorted String Table: .sst (data) + .idx (sparse index) per table
-    * get() uses binary-search on index -> RandomAccessFile seek -> sequential scan
-    * Compressed file support for cold tiers (.sst.gz detection + GZIPInputStream reading)
-  - src/main/java/com/easydb/server/engine/lsm/LSMTree.java [NEW]
-    * 3-level storage: MemTable -> Level 0 -> Level 1 -> Level 2
-    * Auto-flush, background merge (30s interval), tombstone cleanup
-    * Reads: active MemTable -> immutable MemTables -> global index -> L0 -> L1 -> L2
-  - src/main/java/com/easydb/server/engine/DefaultStoreEngine.java
-    * Replaced ConcurrentHashStore with LSMTree as primary storage
-    * Added LruCache (10000 entries) for read-through caching
-    * Integrated WAL replay for all commands (SET/DEL/MSET/MDEL/CREATE/DROP)
-
-Issue 4: 集群没实现 (Fix: Cluster Implementation)
-  - src/main/java/com/easydb/server/cluster/ClusterConfig.java
-    * Added term-based fields: currentTerm (volatile long), votedFor (volatile String)
-    * Added incrementTerm(), resetVote(), getCurrentTerm(), setCurrentTerm()
-    * Changed nodes list to CopyOnWriteArrayList for thread safety
-  - src/main/java/com/easydb/server/cluster/RoleElector.java
-    * Raft-like term-based election with random timeout (3-6s), majority voting
-    * Master announcement broadcast on win (ACK <masterId> MASTER <term>)
-    * Thread-safe with electionInProgress flag
-  - src/main/java/com/easydb/server/cluster/HeartbeatManager.java
-    * Integrated term-based election (ELECT/VOTE/ACK protocols with term numbers)
-    * Added SNAPSHOT protocol for full data sync (SNAPSHOT_START/END)
-    * Extended command execution for collection commands (C_SET, C_DEL)
-    * Heartbeat messages include term number
-  - src/main/java/com/easydb/server/cluster/ReplicationManager.java
-    * replicateCommand() forwards to all slaves via thread pool
-    * Real-time replication via callback chain
-  - src/main/java/com/easydb/server/bootstrap/ServerBootstrap.java
-    * Wire replication callback: DefaultStoreEngine -> ReplicationManager
-    * Read load balancing: slaves serve reads locally (GET/KEYS/EXISTS no forwarding)
-
-Additional Feature Additions:
-  - src/main/java/com/easydb/server/engine/mem/LruCache.java [NEW]
-    * LRU read-through cache using LinkedHashMap access-order mode
-    * 10000 entry max, automatic eldest eviction
-    * Integrated in DefaultStoreEngine: get() checks cache first, set() updates, del() removes
-    * batchSet() / batchDel() maintain cache consistency
-
-  - src/main/java/com/easydb/server/engine/StoreEngine.java
-    * Added collection-level read/write operations:
-      collectionSet(collection, key, value)
-      collectionGet(collection, key)
-      collectionDel(collection, key)
-      collectionKeys(collection)
-    * Internally uses "collection:key" prefix format
-
-  - src/main/java/com/easydb/server/engine/DefaultStoreEngine.java
-    * Implemented collectionSet/get/del/keys with collection existence validation
-    * Integrated LRU read cache in get/set/del/batchSet/batchDel
-
-  - src/main/java/com/easydb/common/constants/Constants.java
-    * Added new command constants: C_SET, C_GET, C_DEL, C_KEYS
-
-  - src/main/java/com/easydb/server/net/ClientHandler.java
-    * Added 4 new collection command handlers: C_SET, C_GET, C_DEL, C_KEYS
-    * All support cluster replication (checkAndReplicate + replicateToSlaves)
-
-  - src/main/java/com/easydb/server/cluster/HeartbeatManager.java
-    * Added C_SET/C_DEL execution for cluster replication
-
-Additional Bug Fixes:
-  - src/main/java/com/easydb/server/engine/disk/WalManager.java
-    * Rewrote replay() to handle ALL command formats: SET/DEL/MSET/MDEL/CREATE/DROP
-    * batchWrite() and batchWriteDel() match replay format
-  - src/main/java/com/easydb/client/gui/GuiClient.java
-    * Fixed variable name conflict: renamed "value" to "valueBuilder" in executeCommand()
-  - src/main/java/com/easydb/client/shell/ShellClient.java
-    * Fixed variable name conflict: renamed "value" to "valueBuilder" in main()
-  - src/main/java/com/easydb/server/http/handler/BatchHandler.java
-    * Fixed type cast error: Map<String,Object> -> Map<String,String> conversion
-
-Modified Files Summary:
-  M  src/main/java/com/easydb/client/gui/GuiClient.java
-  M  src/main/java/com/easydb/client/shell/ShellClient.java
-  M  src/main/java/com/easydb/common/constants/Constants.java
-  M  src/main/java/com/easydb/server/bootstrap/ServerBootstrap.java
-  M  src/main/java/com/easydb/server/cluster/ClusterConfig.java
-  M  src/main/java/com/easydb/server/cluster/HeartbeatManager.java
-  M  src/main/java/com/easydb/server/cluster/RoleElector.java
-  M  src/main/java/com/easydb/server/engine/DefaultStoreEngine.java
-  M  src/main/java/com/easydb/server/engine/StoreEngine.java
-  M  src/main/java/com/easydb/server/engine/disk/Compactor.java
-  M  src/main/java/com/easydb/server/engine/disk/WalManager.java
-  M  src/main/java/com/easydb/server/engine/index/Trie.java
-  M  src/main/java/com/easydb/server/engine/lsm/LSMTree.java
-  M  src/main/java/com/easydb/server/engine/lsm/SSTable.java
-  M  src/main/java/com/easydb/server/http/handler/BatchHandler.java
-  M  src/main/java/com/easydb/server/net/ClientHandler.java
-
-Deleted Files:
-  D  src/main/java/com/easydb/server/engine/disk/DataFileManager.java
-     (dead code - never instantiated by DefaultStoreEngine, replaced by LSM-Tree)
-
-New Files:
-  ?? src/main/java/com/easydb/server/engine/index/SparseIndex.java
-  ?? src/main/java/com/easydb/server/engine/lsm/MemTable.java
-  ?? src/main/java/com/easydb/server/engine/lsm/SSTable.java
-  ?? src/main/java/com/easydb/server/engine/lsm/LSMTree.java
-  ?? src/main/java/com/easydb/server/engine/mem/LruCache.java
-
-Compile Status: BUILD SUCCESS - mvn clean compile, 36 source files, 0 errors
-
-Architecture Decision Notes:
-  - DataFileManager deleted as dead code; LSM-Tree SSTables handle data file management
-  - Compactor integrated into LSMTree.mergeLevel() for L2 cold data GZIP compression
-  - L0/L1 SSTables stay uncompressed for fast random access via sparse index
-  - SparseIndex serves as global key->SSTable lookup for O(1) get() when cache warm
-  - LRU cache (10000 entries) provides read-through caching above LSM-Tree
-  - Collection commands (C_SET/C_GET/C_DEL/C_KEYS) use "collection:key" prefix internally
-  - SSTable tombstone uses null value (not empty string) for deleted key marking
-  - Replication uses push model: master writes locally then forwards to slaves
-  - Read load balancing: slaves serve GET/KEYS/EXISTS locally without master forwarding
-  - Rotate based on SSTable file size (64MB): checkRotateAndCompress() runs every 10s,
-    closes file -> creates new file -> submits old file to Compactor for async compression
-  - Complex data types (List/Set/Map) stored as JSON: LPUSH/RPUSH/LPOP/RPOP/LLEN for List,
-    SADD/SMEMBERS/SREM for Set, HSET/HGET/HDEL/HGETALL for Hash
-  - All List/Set/Hash commands support cluster replication via ReplicateCallback
+项目最终状态: BUILD SUCCESS, 36 source files, 0 errors
+文件总数: 36个Java源文件 + 1个README.md + 1个git_log.txt + pom.xml
+提交总数: 6次 (1次郑博浩 + 5次郑根壕)
+分支: master, 已推送至 zgh-NoSQL/master
