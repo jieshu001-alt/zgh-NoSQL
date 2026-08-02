@@ -22,13 +22,13 @@ com\easydb\server\cluster\NodeRole.class
 com\easydb\server\http\handler\BatchHandler.class
 com\easydb\server\engine\mem\LruCache.class
 com\easydb\server\net\RequestDecoder.class
-com\easydb\server\engine\disk\Compactor.class
 com\easydb\server\engine\index\Trie$1.class
 com\easydb\server\http\HttpRequest.class
 com\easydb\server\http\HttpServer.class
 com\easydb\client\sdk\DatabaseClient$DatabaseException.class
 com\easydb\server\cluster\Node.class
 com\easydb\server\engine\index\Trie$TrieNode.class
+com\easydb\server\engine\disk\CacheGovernor.class
 com\easydb\server\engine\DefaultStoreEngine.class
 com\easydb\server\http\handler\KeysListHandler.class
 com\easydb\server\engine\lsm\MemTable.class

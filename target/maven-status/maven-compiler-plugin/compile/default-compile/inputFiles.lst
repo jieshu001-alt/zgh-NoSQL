@@ -10,7 +10,7 @@ E:\作业\java数据库课设\大作业\Java高级编程大作业\src\main\java\
 E:\作业\java数据库课设\大作业\Java高级编程大作业\src\main\java\com\easydb\server\net\ClientHandler.java
 E:\作业\java数据库课设\大作业\Java高级编程大作业\src\main\java\com\easydb\server\http\HttpRequest.java
 E:\作业\java数据库课设\大作业\Java高级编程大作业\src\main\java\com\easydb\server\http\handler\BatchHandler.java
-E:\作业\java数据库课设\大作业\Java高级编程大作业\src\main\java\com\easydb\server\engine\disk\Compactor.java
+E:\作业\java数据库课设\大作业\Java高级编程大作业\src\main\java\com\easydb\server\proxy\ClusterProxy.java
 E:\作业\java数据库课设\大作业\Java高级编程大作业\src\main\java\com\easydb\server\engine\index\SparseIndex.java
 E:\作业\java数据库课设\大作业\Java高级编程大作业\src\main\java\com\easydb\server\engine\lsm\LSMTree.java
 E:\作业\java数据库课设\大作业\Java高级编程大作业\src\main\java\com\easydb\server\http\handler\KeysListHandler.java
@@ -25,6 +25,7 @@ E:\作业\java数据库课设\大作业\Java高级编程大作业\src\main\java\
 E:\作业\java数据库课设\大作业\Java高级编程大作业\src\main\java\com\easydb\client\cli\CliSession.java
 E:\作业\java数据库课设\大作业\Java高级编程大作业\src\main\java\com\easydb\common\utils\ByteUtils.java
 E:\作业\java数据库课设\大作业\Java高级编程大作业\src\main\java\com\easydb\server\engine\DefaultStoreEngine.java
+E:\作业\java数据库课设\大作业\Java高级编程大作业\src\main\java\com\easydb\server\engine\disk\CacheGovernor.java
 E:\作业\java数据库课设\大作业\Java高级编程大作业\src\main\java\com\easydb\server\http\RestDispatcher.java
 E:\作业\java数据库课设\大作业\Java高级编程大作业\src\main\java\com\easydb\server\engine\index\Trie.java
 E:\作业\java数据库课设\大作业\Java高级编程大作业\src\main\java\com\easydb\server\net\SocketServer.java
