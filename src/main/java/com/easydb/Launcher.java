@@ -46,6 +46,9 @@ public class Launcher {
             boolean enableCluster = false;
             String joinHost = null;
             int joinClusterPort = 0;
+            String nodeList = null;
+            boolean startProxy = false;
+            int proxyPort = Constants.DEFAULT_PROXY_PORT;
 
             for (int i = 1; i < args.length; i++) {
                 switch (args[i]) {
@@ -70,11 +73,29 @@ public class Launcher {
                         joinClusterPort = Integer.parseInt(joinParts[1]);
                         enableCluster = true;
                         break;
+                    case "--nodes":
+                        nodeList = args[++i];
+                        enableCluster = true;
+                        break;
+                    case "--proxy":
+                        startProxy = true;
+                        enableCluster = true;
+                        break;
+                    case "--proxy-port":
+                        proxyPort = Integer.parseInt(args[++i]);
+                        break;
                 }
             }
 
             ServerBootstrap bootstrap = new ServerBootstrap(clientPort, httpPort, clusterPort, nodeId, 
                                                            enableCluster, joinHost, joinClusterPort);
+            if (nodeList != null) {
+                bootstrap.setNodeList(nodeList);
+            }
+            if (startProxy) {
+                bootstrap.setStartProxy(true);
+                bootstrap.setProxyPort(proxyPort);
+            }
             bootstrap.start();
             
             Thread.currentThread().join();
@@ -131,13 +152,23 @@ public class Launcher {
         System.out.println("  --server --cluster-port <port>      Set cluster communication port (default: 8094)");
         System.out.println("  --server --node-id <id>             Set node ID (default: node-1)");
         System.out.println("  --server --join <host:port>         Join an existing cluster");
+        System.out.println("  --server --nodes <node-list>        Specify all cluster nodes (dynamic election)");
+        System.out.println("  --server --proxy                    Enable Proxy read/write separation");
+        System.out.println("  --server --proxy-port <port>        Set Proxy port (default: 6379)");
         System.out.println();
-        System.out.println("Examples:");
-        System.out.println("  java -jar easy-db.jar --server");
-        System.out.println("  java -jar easy-db.jar --server --cluster --node-id node-1");
-        System.out.println("  java -jar easy-db.jar --server --cluster --node-id node-2 --join localhost:8094");
-        System.out.println("  java -jar easy-db.jar --cli");
-        System.out.println("  java -jar easy-db.jar --shell GET name");
+        System.out.println("Node list format:");
+        System.out.println("  id1:host1:clientPort1:clusterPort1,id2:host2:clientPort2:clusterPort2,...");
+        System.out.println();
+        System.out.println("Cluster examples:");
+        System.out.println("  # Mode 1: Master reads/writes, slaves backup (direct mode)");
+        System.out.println("  java -jar easy-db.jar --server --cluster --node-id node-1 \\");
+        System.out.println("    --nodes node-1:localhost:8092:8094,node-2:localhost:9092:9094,node-3:localhost:10092:10094");
+        System.out.println("  java -jar easy-db.jar --server --cluster --node-id node-2 --port 9092 \\");
+        System.out.println("    --cluster-port 9094 --nodes node-1:localhost:8092:8094,node-2:localhost:9092:9094,node-3:localhost:10092:10094");
+        System.out.println();
+        System.out.println("  # Mode 2: Proxy read/write separation");
+        System.out.println("  java -jar easy-db.jar --server --cluster --node-id node-1 --proxy \\");
+        System.out.println("    --nodes node-1:localhost:8092:8094,node-2:localhost:9092:9094,node-3:localhost:10092:10094");
     }
 
     private static void printServerUsage() {
@@ -151,5 +182,8 @@ public class Launcher {
         System.out.println("  --cluster-port <port>      Set cluster communication port (default: 8094)");
         System.out.println("  --node-id <id>             Set node ID (default: node-1)");
         System.out.println("  --join <host:port>         Join an existing cluster");
+        System.out.println("  --nodes <node-list>        Specify all cluster nodes for dynamic election");
+        System.out.println("  --proxy                    Enable Proxy read/write separation middleware");
+        System.out.println("  --proxy-port <port>        Set Proxy port (default: 6379)");
     }
 }

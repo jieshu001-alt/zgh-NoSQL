@@ -1,6 +1,7 @@
 package com.easydb.server.engine;
 
 import com.easydb.common.constants.Constants;
+import com.easydb.server.engine.disk.CacheGovernor;
 import com.easydb.server.engine.disk.WalManager;
 import com.easydb.server.engine.lsm.LSMTree;
 import com.easydb.server.engine.mem.LruCache;
@@ -19,6 +20,7 @@ public class DefaultStoreEngine implements StoreEngine {
     private final WalManager walManager;
     private final Set<String> collections = ConcurrentHashMap.newKeySet();
     private final LruCache readCache = new LruCache(10000); // 最多缓存10000条
+    private final CacheGovernor cacheGovernor;                // 缓存后台治理
     
     // 复制回调接口
     public interface ReplicationCallback {
@@ -30,6 +32,8 @@ public class DefaultStoreEngine implements StoreEngine {
     private DefaultStoreEngine() {
         this.walManager = new WalManager();
         replayWal();
+        this.cacheGovernor = new CacheGovernor(readCache, lsmTree);
+        this.cacheGovernor.start();
     }
 
     public static DefaultStoreEngine getInstance() {
@@ -182,6 +186,7 @@ public class DefaultStoreEngine implements StoreEngine {
 
     @Override
     public void shutdown() {
+        cacheGovernor.shutdown();
         lsmTree.close();
         walManager.close();
     }

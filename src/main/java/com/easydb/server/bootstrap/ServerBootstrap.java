@@ -6,6 +6,7 @@ import com.easydb.server.engine.DefaultStoreEngine;
 import com.easydb.server.engine.StoreEngine;
 import com.easydb.server.http.HttpServer;
 import com.easydb.server.net.SocketServer;
+import com.easydb.server.proxy.ClusterProxy;
 
 import java.io.IOException;
 import java.util.concurrent.Executors;
@@ -16,6 +17,7 @@ public class ServerBootstrap {
 
     private SocketServer socketServer;
     private HttpServer httpServer;
+    private ClusterProxy clusterProxy;
     private ScheduledExecutorService monitorExecutor;
     private ClusterConfig clusterConfig;
     private HeartbeatManager heartbeatManager;
@@ -27,6 +29,9 @@ public class ServerBootstrap {
     private boolean enableCluster;
     private String joinHost;
     private int joinClusterPort;
+    private String nodeList;
+    private boolean startProxy;
+    private int proxyPort;
 
     public ServerBootstrap() {
         this(Constants.DEFAULT_SOCKET_PORT, Constants.DEFAULT_HTTP_PORT, Constants.DEFAULT_CLUSTER_PORT, 
@@ -46,6 +51,20 @@ public class ServerBootstrap {
         this.enableCluster = enableCluster;
         this.joinHost = joinHost;
         this.joinClusterPort = joinClusterPort;
+        this.startProxy = false;
+        this.proxyPort = Constants.DEFAULT_PROXY_PORT;
+    }
+    
+    public void setNodeList(String nodeList) {
+        this.nodeList = nodeList;
+    }
+    
+    public void setStartProxy(boolean startProxy) {
+        this.startProxy = startProxy;
+    }
+    
+    public void setProxyPort(int proxyPort) {
+        this.proxyPort = proxyPort;
     }
 
     public void start() throws IOException {
@@ -58,6 +77,11 @@ public class ServerBootstrap {
         
         if (enableCluster) {
             initCluster();
+        }
+        
+        // 启动Proxy（读写分离中间件）
+        if (startProxy && enableCluster) {
+            initProxy();
         }
         
         startMonitorThread();
@@ -74,13 +98,25 @@ public class ServerBootstrap {
             System.out.println("Cluster enabled, running on port " + clusterPort);
             System.out.println("Node ID: " + nodeId);
         }
+        
+        if (startProxy && enableCluster) {
+            System.out.println("Cluster Proxy (read/write separation) running on port " + proxyPort);
+        }
     }
 
     private void initCluster() throws IOException {
         clusterConfig = new ClusterConfig(nodeId, Constants.DEFAULT_HOST, clientPort, clusterPort);
         
-        Node selfNode = new Node(nodeId, Constants.DEFAULT_HOST, clientPort, clusterPort);
-        clusterConfig.addNode(selfNode);
+        // 解析并添加所有节点到配置
+        if (nodeList != null && !nodeList.isEmpty()) {
+            clusterConfig.parseNodeList(nodeList);
+        }
+        
+        Node selfNode = clusterConfig.getSelfNode();
+        if (selfNode == null) {
+            selfNode = new Node(nodeId, Constants.DEFAULT_HOST, clientPort, clusterPort);
+            clusterConfig.addNode(selfNode);
+        }
         
         heartbeatManager = new HeartbeatManager(clusterConfig);
         replicationManager = new ReplicationManager(clusterConfig);
@@ -88,7 +124,7 @@ public class ServerBootstrap {
         heartbeatManager.start();
         replicationManager.start();
         
-        // 设置复制回调：当 master 写入数据时，自动转发到所有 slave
+        // 设置复制回调：当 master 写入数据时，自动转发到所有 slave（含WAL同步）
         DefaultStoreEngine.getInstance().setReplicationCallback(command -> {
             if (replicationManager != null) {
                 replicationManager.replicateCommand(command);
@@ -96,16 +132,37 @@ public class ServerBootstrap {
         });
         
         if (joinHost != null && joinClusterPort > 0) {
+            // 加入已有集群
             if (heartbeatManager.joinCluster(joinHost, joinClusterPort)) {
                 System.out.println("Successfully joined cluster at " + joinHost + ":" + joinClusterPort);
+                // 加入集群后请求全量同步
+                System.out.println("Data synced from master, current role: SLAVE");
             } else {
-                selfNode.setRole(NodeRole.MASTER);
-                System.out.println("No existing cluster found, becoming MASTER");
+                // 加入失败，触发选举
+                System.out.println("Failed to join cluster, starting election...");
+                selfNode.setRole(NodeRole.SLAVE);
+                heartbeatManager.triggerElection();
             }
         } else {
-            selfNode.setRole(NodeRole.MASTER);
-            System.out.println("No join host specified, becoming MASTER");
+            // 动态选举模式：所有节点初始为 SLAVE，通过选举确定主节点
+            selfNode.setRole(NodeRole.SLAVE);
+            System.out.println("Node started, initializing dynamic election...");
+            // 短暂延迟后触发选举，确保其他节点也启动完毕
+            new Thread(() -> {
+                try {
+                    Thread.sleep(2000);
+                    heartbeatManager.triggerElection();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }, "InitialElection").start();
         }
+    }
+    
+    private void initProxy() throws IOException {
+        clusterProxy = new ClusterProxy(proxyPort, clusterConfig, heartbeatManager);
+        clusterProxy.start();
+        System.out.println("ClusterProxy (read/write separation) started on port " + proxyPort);
     }
 
     private void startMonitorThread() {
@@ -129,6 +186,10 @@ public class ServerBootstrap {
     public void stop() {
         if (monitorExecutor != null) {
             monitorExecutor.shutdown();
+        }
+        
+        if (clusterProxy != null) {
+            clusterProxy.stop();
         }
         
         if (heartbeatManager != null) {
@@ -158,6 +219,14 @@ public class ServerBootstrap {
 
     public ReplicationManager getReplicationManager() {
         return replicationManager;
+    }
+
+    public HeartbeatManager getHeartbeatManager() {
+        return heartbeatManager;
+    }
+
+    public ClusterProxy getClusterProxy() {
+        return clusterProxy;
     }
 
     public boolean isClusterEnabled() {

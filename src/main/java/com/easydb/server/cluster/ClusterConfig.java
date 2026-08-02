@@ -115,4 +115,25 @@ public class ClusterConfig {
     public void resetVote() {
         this.votedFor = null;
     }
+
+    /**
+     * 从节点列表字符串解析并添加所有节点
+     * 格式：nodeId1:host1:clientPort1:clusterPort1,nodeId2:host2:clientPort2:clusterPort2,...
+     */
+    public void parseNodeList(String nodeListStr) {
+        if (nodeListStr == null || nodeListStr.isEmpty()) {
+            return;
+        }
+        String[] nodeDefs = nodeListStr.split(",");
+        for (String nodeDef : nodeDefs) {
+            String[] parts = nodeDef.trim().split(":");
+            if (parts.length >= 4) {
+                String id = parts[0].trim();
+                String host = parts[1].trim();
+                int clientPort = Integer.parseInt(parts[2].trim());
+                int clusterPort = Integer.parseInt(parts[3].trim());
+                addNode(new Node(id, host, clientPort, clusterPort));
+            }
+        }
+    }
 }

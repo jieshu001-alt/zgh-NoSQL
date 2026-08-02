@@ -235,7 +235,26 @@ public class SparseIndex {
                 }
             }
             
-            System.out.println("[SparseIndex] Loaded " + indexMap.size() + " entries from disk");
+            // 校验：过滤掉指向已不存在 SSTable 文件的索引条目
+            int beforeValidate = indexMap.size();
+            List<String> invalidKeys = new ArrayList<>();
+            for (Map.Entry<String, IndexEntry> entry : indexMap.entrySet()) {
+                IndexEntry idx = entry.getValue();
+                int level = (int) idx.getFileIndex();
+                long sstIndex = idx.getOffset();
+                String sstPath = Constants.DATA_DIR + "/sstables/level-" + level + "/sst-" + sstIndex + ".sst";
+                if (!new File(sstPath).exists()) {
+                    invalidKeys.add(entry.getKey());
+                }
+            }
+            for (String k : invalidKeys) {
+                indexMap.remove(k);
+            }
+            if (!invalidKeys.isEmpty()) {
+                System.out.println("[SparseIndex] Removed " + invalidKeys.size() + " stale entries (SSTable files not found)");
+            }
+            
+            System.out.println("[SparseIndex] Loaded " + indexMap.size() + " entries from disk (validated)");
         } catch (IOException e) {
             System.err.println("[SparseIndex] Failed to load index: " + e.getMessage());
             // 索引文件损坏，清空并重新构建

@@ -183,6 +183,8 @@ public class RoleElector {
      */
     public void handleMasterAnnouncement(String masterId, long term) {
         if (term >= config.getCurrentTerm()) {
+            boolean wasMaster = config.isSelfMaster();
+            
             config.setCurrentTerm(term);
             config.resetVote();
             

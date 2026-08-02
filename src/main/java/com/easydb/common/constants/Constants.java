@@ -56,8 +56,28 @@ public class Constants {
     public static final String COLLECTION_SEPARATOR = ":";
     public static final int COLLECTION_NAME_MAX_LENGTH = 32;
     
-    public static final int COMPACTOR_CORE_THREADS = 2;
+    // Cache Governor 缓存治理常量
+    public static final int CACHE_GOVERNOR_INTERVAL_SECONDS = 60;       // 治理周期（秒）
+    public static final int COLD_DATA_IDLE_SECONDS = 300;               // 冷数据判定：空闲超过此秒数
+    public static final int COLD_DATA_ACCESS_THRESHOLD = 3;             // 冷数据判定：访问频次低于此值
+    public static final String[] ABANDONED_KEY_PATTERNS = {"test_", "tmp_", "debug_"}; // 废弃key模式
     
     public static final int DEFAULT_CLUSTER_PORT = 8094;
+    public static final int DEFAULT_PROXY_PORT = 6379;
     public static final int DEFAULT_NODE_ID = 1;
+    
+    // 写命令集合（Proxy读写分离用）
+    public static final java.util.Set<String> WRITE_COMMANDS = new java.util.HashSet<>(java.util.Arrays.asList(
+        COMMAND_SET, COMMAND_DEL, COMMAND_MSET, COMMAND_MDEL,
+        COMMAND_LPUSH, COMMAND_RPUSH, COMMAND_LPOP, COMMAND_RPOP,
+        COMMAND_SADD, COMMAND_SREM, COMMAND_HSET, COMMAND_HDEL,
+        COMMAND_CREATE, COMMAND_DROP, COMMAND_COLL_SET, COMMAND_COLL_DEL
+    ));
+    
+    // 读命令集合（Proxy读写分离用）
+    public static final java.util.Set<String> READ_COMMANDS = new java.util.HashSet<>(java.util.Arrays.asList(
+        COMMAND_GET, COMMAND_KEYS, COMMAND_EXISTS, COMMAND_MGET,
+        COMMAND_SMEMBERS, COMMAND_HGET, COMMAND_HGETALL, COMMAND_LLEN,
+        COMMAND_COLLECTIONS, COMMAND_COLL_GET, COMMAND_COLL_KEYS
+    ));
 }

@@ -427,11 +427,46 @@ public class HeartbeatManager {
         }, 0, ClusterConfig.HEARTBEAT_INTERVAL, TimeUnit.MILLISECONDS);
     }
 
+    private volatile String lastKnownMasterId = null;
+
     private void checkMasterStatus() {
         Node master = config.getMaster();
+        
+        // 检测 master 宕机，触发选举
         if (master == null || !master.isAlive()) {
             roleElector.startElection();
+            return;
         }
+        
+        // 检测新主上位（故障转移后），触发全量同步
+        Node self = config.getSelfNode();
+        if (self != null && self.getRole() == NodeRole.SLAVE) {
+            if (lastKnownMasterId != null && !lastKnownMasterId.equals(master.getId())) {
+                System.out.println("[HeartbeatManager] Detected new master " + master.getId() + ", requesting full sync...");
+                new Thread(() -> requestFullSync(), "PostFailoverSync").start();
+            }
+            lastKnownMasterId = master.getId();
+        }
+    }
+
+    public RoleElector getRoleElector() {
+        return roleElector;
+    }
+
+    public void triggerElection() {
+        roleElector.startElection();
+    }
+
+    /**
+     * 请求全量快照同步（故障转移后重新同步新主数据）
+     */
+    public void requestFullSync() {
+        Node master = config.getMaster();
+        if (master == null || master.getId().equals(config.getSelfId())) {
+            return;
+        }
+        System.out.println("[HeartbeatManager] Post-failover: re-syncing from new master " + master.getId());
+        syncFromMaster(master.getHost(), master.getClusterPort());
     }
 
     public void stop() {

@@ -1,7 +1,6 @@
 package com.easydb.server.engine.lsm;
 
 import com.easydb.common.constants.Constants;
-import com.easydb.server.engine.disk.Compactor;
 import com.easydb.server.engine.index.SparseIndex;
 
 import java.io.*;
@@ -12,7 +11,6 @@ import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
-import java.util.zip.GZIPOutputStream;
 
 /**
  * LSM-Tree - Log-Structured Merge Tree
@@ -28,6 +26,7 @@ public class LSMTree {
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
     private final ExecutorService flushExecutor = Executors.newSingleThreadExecutor();
     private final ExecutorService mergeExecutor = Executors.newSingleThreadExecutor();
+    private final ExecutorService cleanupExecutor = Executors.newFixedThreadPool(2); // Rotate后文件清洗线程池
 
     private volatile MemTable activeMemTable;
     private final Deque<MemTable> immutableMemTables = new ConcurrentLinkedDeque<>();
@@ -37,9 +36,6 @@ public class LSMTree {
     
     // 文件索引计数器
     private long sstableIndex = 0;
-
-    // 压缩器 - 用于合并后压缩 SSTable 及 Rotate 压缩
-    private final Compactor compactor = new Compactor();
     
     // 全局稀疏索引 - 加速键定位
     private final SparseIndex globalIndex = new SparseIndex();
@@ -161,14 +157,19 @@ public class LSMTree {
             if (idxEntry != null) {
                 int targetLevel = (int) idxEntry.getFileIndex();
                 if (targetLevel >= 0 && targetLevel < MAX_LEVELS) {
+                    boolean sstableFound = false;
                     for (SSTable sstable : levels.get(targetLevel)) {
                         if (sstable.getFileIndex() == idxEntry.getOffset()) {
+                            sstableFound = true;
                             value = sstable.get(key);
                             if (value != null) return value;
                             break; // 索引定位到了这个 SSTable，如果没找到就是真没有
                         }
                     }
-                    // 索引指向的 SSTable 已被合并，回退到全层扫描
+                    // 索引指向的 SSTable 已被合并删除，清理失效条目
+                    if (!sstableFound) {
+                        globalIndex.remove(key);
+                    }
                 }
             }
             
@@ -364,8 +365,8 @@ public class LSMTree {
     }
 
     /**
-     * 检查 SSTable 文件大小，触发 Rotate 和压缩
-     * 文件达到 64MB 后：关闭当前文件 -> 创建新文件 -> 后台压缩旧文件
+     * 检查 SSTable 文件大小，触发 Rotate
+     * 文件达到 64MB 后：关闭当前文件 -> 创建新文件继续写入 -> 异步清洗旧文件
      */
     private void checkRotateAndCompress() {
         lock.writeLock().lock();
@@ -376,9 +377,8 @@ public class LSMTree {
                 
                 SSTable lastSSTable = sstables.get(sstables.size() - 1);
                 
-                // 检查文件大小是否超过限制（仅未压缩的 L0/L1 文件）
-                if (!lastSSTable.isCompressed() && !lastSSTable.isClosed() 
-                    && lastSSTable.exceedsSizeLimit()) {
+                // 检查文件大小是否超过限制
+                if (!lastSSTable.isClosed() && lastSSTable.exceedsSizeLimit()) {
                     
                     // 关闭当前文件（Rotate）
                     lastSSTable.closeFile();
@@ -386,16 +386,16 @@ public class LSMTree {
                         lastSSTable.getFileIndex() + " (level " + level + "), size: " + 
                         lastSSTable.getSize());
                     
-                    // 创建新文件
+                    // 创建新文件继续写入
                     SSTable newSSTable = new SSTable(level, sstableIndex++);
                     sstables.add(newSSTable);
                     System.out.println("[LSMTree] Created new SSTable " + newSSTable.getFileIndex() + 
                         " (level " + level + ")");
                     
-                    // 异步压缩旧文件（使用 Compactor 线程池）
-                    compactor.submitCompaction(lastSSTable.getDataFile());
-                    System.out.println("[LSMTree] Compression submitted for SSTable " + 
-                        lastSSTable.getFileIndex());
+                    // 异步清洗旧文件：去重 + 去墓碑 + 生成精简SSTable
+                    final SSTable oldSSTable = lastSSTable;
+                    final int oldLevel = level;
+                    cleanupExecutor.submit(() -> cleanupRotatedFile(oldSSTable, oldLevel));
                 }
             }
         } finally {
@@ -479,9 +479,14 @@ public class LSMTree {
             // 更新全局索引
             updateGlobalIndex(newSSTable, level + 1);
             
-            // 压缩高层 SSTable（L2 冷数据做 GZIP 压缩）
-            if (level + 1 >= 2) {
-                compressSSTable(newSSTable);
+            // 清理旧 SSTable 对应的索引条目
+            for (SSTable sstable : currentLevel) {
+                for (String key : sstable.getAllKeys()) {
+                    SparseIndex.IndexEntry entry = globalIndex.get(key);
+                    if (entry != null && entry.getOffset() == sstable.getFileIndex()) {
+                        globalIndex.remove(key);
+                    }
+                }
             }
             
             // 删除旧的 SSTable
@@ -497,6 +502,97 @@ public class LSMTree {
             System.err.println("[LSMTree] Failed to merge level " + level + ": " + e.getMessage());
         } finally {
             lock.writeLock().unlock();
+        }
+    }
+
+    /**
+     * 清洗 Rotate 后的旧 SSTable 文件（异步执行）
+     * 流程：读取全量数据 → TreeMap去重排序 → 过滤墓碑 → 生成精简SSTable → 替换旧文件 → 更新索引
+     */
+    private void cleanupRotatedFile(SSTable oldSSTable, int level) {
+        try {
+            System.out.println("[LSMTree] Cleaning up rotated SSTable " + oldSSTable.getFileIndex() + " (level " + level + ")");
+            
+            // 读取旧文件全部数据
+            List<Map.Entry<String, String>> entries = oldSSTable.getAllEntries();
+            if (entries.isEmpty()) {
+                oldSSTable.delete();
+                return;
+            }
+            
+            // TreeMap 按 key 字典序排序并去重（同 key 保留后写入的版本）
+            Map<String, String> deduped = new TreeMap<>();
+            for (Map.Entry<String, String> entry : entries) {
+                deduped.put(entry.getKey(), entry.getValue());
+            }
+            
+            // 过滤墓碑标记
+            deduped.entrySet().removeIf(e -> e.getValue() == null || e.getValue().equals(MemTable.TOMBSTONE));
+            
+            if (deduped.isEmpty()) {
+                // 全是墓碑，直接删除旧文件
+                lock.writeLock().lock();
+                try {
+                    // 清理旧索引
+                    for (String key : oldSSTable.getAllKeys()) {
+                        SparseIndex.IndexEntry idx = globalIndex.get(key);
+                        if (idx != null && idx.getOffset() == oldSSTable.getFileIndex()) {
+                            globalIndex.remove(key);
+                        }
+                    }
+                    levels.get(level).remove(oldSSTable);
+                } finally {
+                    lock.writeLock().unlock();
+                }
+                oldSSTable.delete();
+                System.out.println("[LSMTree] Cleanup: all entries were tombstones, deleted SSTable " + oldSSTable.getFileIndex());
+                return;
+            }
+            
+            // 写入精简后的新 SSTable
+            MemTable temp = new MemTable(Long.MAX_VALUE);
+            for (Map.Entry<String, String> entry : deduped.entrySet()) {
+                temp.put(entry.getKey(), entry.getValue());
+            }
+            SSTable newSSTable = new SSTable(level, sstableIndex++);
+            newSSTable.writeFromMemTable(temp);
+            
+            // 替换 levels 列表中的旧 SSTable 为新文件
+            lock.writeLock().lock();
+            try {
+                List<SSTable> levelList = levels.get(level);
+                int oldIdx = levelList.indexOf(oldSSTable);
+                if (oldIdx >= 0) {
+                    levelList.set(oldIdx, newSSTable);
+                } else {
+                    // 旧 SSTable 已被 mergeLevel 移除，清理新文件
+                    newSSTable.delete();
+                    oldSSTable.delete();
+                    return;
+                }
+                
+                // 清理旧索引条目
+                for (String key : oldSSTable.getAllKeys()) {
+                    SparseIndex.IndexEntry idx = globalIndex.get(key);
+                    if (idx != null && idx.getOffset() == oldSSTable.getFileIndex()) {
+                        globalIndex.remove(key);
+                    }
+                }
+                // 更新新索引
+                updateGlobalIndex(newSSTable, level);
+            } finally {
+                lock.writeLock().unlock();
+            }
+            
+            // 删除旧文件
+            oldSSTable.delete();
+            
+            System.out.println("[LSMTree] Cleanup complete: SSTable " + oldSSTable.getFileIndex() 
+                + " → " + newSSTable.getFileIndex() + " (level " + level + "), "
+                + "entries: " + deduped.size());
+                
+        } catch (Exception e) {
+            System.err.println("[LSMTree] Failed to cleanup rotated SSTable: " + e.getMessage());
         }
     }
 
@@ -517,6 +613,7 @@ public class LSMTree {
         // 等待刷新完成
         flushExecutor.shutdown();
         mergeExecutor.shutdown();
+        cleanupExecutor.shutdown();
         
         // 等待不可变 MemTable 刷盘完成
         while (!immutableMemTables.isEmpty()) {
@@ -529,7 +626,6 @@ public class LSMTree {
         
         // 持久化全局索引
         globalIndex.persist();
-        compactor.shutdown();
         
         System.out.println("[LSMTree] Closed");
     }
@@ -543,38 +639,6 @@ public class LSMTree {
             // 用 fileIndex 存 level, offset 存 sstableIndex
             globalIndex.put(key, level, sstable.getFileIndex(), 0);
         }
-    }
-
-    /**
-     * 压缩 SSTable 数据文件（GZIP）
-     */
-    private void compressSSTable(SSTable sstable) {
-        File dataFile = sstable.getDataFile();
-        if (dataFile == null || !dataFile.exists() || dataFile.getName().endsWith(Constants.GZ_FILE_SUFFIX)) {
-            return;
-        }
-        
-        File gzFile = new File(dataFile.getAbsolutePath() + Constants.GZ_FILE_SUFFIX);
-        
-        try (BufferedReader reader = new BufferedReader(
-                new InputStreamReader(new FileInputStream(dataFile), Constants.ENCODING));
-             BufferedWriter writer = new BufferedWriter(
-                new OutputStreamWriter(new GZIPOutputStream(new FileOutputStream(gzFile)), Constants.ENCODING))) {
-            
-            String line;
-            while ((line = reader.readLine()) != null) {
-                writer.write(line + Constants.LINE_SEPARATOR);
-            }
-            
-            System.out.println("[LSMTree] Compressed SSTable: " + gzFile.getName());
-        } catch (IOException e) {
-            System.err.println("[LSMTree] Failed to compress SSTable: " + e.getMessage());
-            gzFile.delete(); // 清理失败的压缩文件
-            return;
-        }
-        
-        // 删除原始未压缩文件
-        dataFile.delete();
     }
 
     /**
