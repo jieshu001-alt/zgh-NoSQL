@@ -159,8 +159,45 @@ Summary: 郑根壕，最终完善：
 ③ 测试数据更新
 ④ BUILD SUCCESS - 36源文件，0错误，最终交付版本
 
+--------------------------------------------------------------------------------
+
+Commit 7: e87fe6e8dcc5e42be709d109854954133fc861d1
+Author: JieShu <jieshu001@gmail.com>
+Date: 2026-08-02 20:48:37
+Message: 郑根壕+郑博浩 联合修改
+
+Files (13 changed, 866 insertions, 76 deletions):
+  A src/.../server/engine/disk/CacheGovernor.java      缓存治理(200行)
+  A src/.../server/proxy/ClusterProxy.java              读写分离代理(264行)
+  M src/.../Launcher.java                               --nodes/--proxy/--proxy-port参数
+  M src/.../common/constants/Constants.java             新增PROXY_PORT+读写命令集合
+  M src/.../server/bootstrap/ServerBootstrap.java       动态选举启动+Proxy集成
+  M src/.../server/cluster/ClusterConfig.java           parseNodeList节点列表解析
+  M src/.../server/cluster/HeartbeatManager.java        triggerElection+requestFullSync
+  M src/.../server/cluster/ReplicationManager.java      WAL日志同步语义
+  M src/.../server/cluster/RoleElector.java             选举流程优化
+  M src/.../server/engine/DefaultStoreEngine.java       CacheGovernor集成
+  M src/.../server/engine/index/SparseIndex.java        启动加载校验(过滤无效sst)
+  M src/.../server/engine/lsm/LSMTree.java              Rotate清洗+索引一致性
+  M src/.../server/engine/mem/LruCache.java             访问频率跟踪
+
+Summary: 郑根壕+郑博浩，联合最终完善：
+郑博浩部分——
+① 集群动态选举:所有节点启动初始SLAVE→triggerElection竞争→3-6s随机延时→多数派投票胜选
+② ClusterProxy读写分离中间件:监听6379,写→MASTER,读→轮询SLAVE,3s刷新拓扑,故障自动切换
+③ 故障转移增强:Master宕机→新选举→requestFullSync全量重同步
+④ WAL日志同步:Master写WAL→REPLICATE推送WAL条目→Slave先写本地WAL再执行
+⑤ 启动参数扩展:--nodes传入节点列表,--proxy启用Proxy模式
+郑根壕部分——
+① Rotate后异步清洗流水线:cleanupRotatedFile→TreeMap去重→过滤墓碑→生成精简SSTable→替换删除
+② 双线程清洗池(cleanupExecutor=FixedThreadPool(2))异步执行,不阻塞读写
+③ 索引一致性三处修复:mergeLevel清理旧索引+get()失效条目清除+loadFromDisk()校验过滤
+④ CacheGovernor(新增):60s周期四阶段治理-去重/冷数据淘汰/脏缓存清理/废弃key清理
+⑤ 替换Compactor:GZIP文件压缩方案改为纯内存缓存治理
+⑥ LruCache扩展:accessCount+lastAccessTime访问频率跟踪
+
 ======================================================================
-项目最终状态: BUILD SUCCESS, 36 source files, 0 errors
-文件总数: 36个Java源文件 + 1个README.md + 1个git_log.txt + pom.xml
-提交总数: 6次 (1次郑博浩 + 5次郑根壕)
+项目最终状态: BUILD SUCCESS, 38 source files, 0 errors
+文件总数: 38个Java源文件 + 1个README.md + 1个git_log.txt + pom.xml
+提交总数: 7次 (1次郑博浩 + 5次郑根壕 + 1次联合修改)
 分支: master, 已推送至 zgh-NoSQL/master
